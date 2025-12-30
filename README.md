@@ -51,36 +51,36 @@ In your task Activity:
 
 ```kotlin
 class TaskActivity : AppCompatActivity(), TaskGateSDK.TaskGateListener {
-    
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_task)
-        
+
         // Set listener for task events
         TaskGateSDK.setListener(this)
-        
+
         // Handle the incoming intent
         TaskGateSDK.handleIntent(intent)
     }
-    
+
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         // Handle when app is already running
         TaskGateSDK.handleIntent(intent)
     }
-    
+
     override fun onTaskReceived(taskInfo: TaskGateSDK.TaskInfo) {
         // TaskGate sent a task request
         Log.d("Task", "Received task: ${taskInfo.taskId}")
         Log.d("Task", "Blocked app: ${taskInfo.appName}")
-        
+
         // Your task UI is ready - notify TaskGate
         TaskGateSDK.notifyReady()
-        
+
         // Show your task based on taskInfo.taskId
         showTask(taskInfo)
     }
-    
+
     override fun onTaskRequested(taskId: String, params: Map<String, String>) {
         // Alternative callback with just task ID
     }
@@ -95,25 +95,25 @@ Add to your `AndroidManifest.xml`:
 <activity
     android:name=".TaskActivity"
     android:exported="true">
-    
+
     <!-- HTTPS Deep Links (recommended) -->
     <intent-filter android:autoVerify="true">
         <action android:name="android.intent.action.VIEW" />
         <category android:name="android.intent.category.DEFAULT" />
         <category android:name="android.intent.category.BROWSABLE" />
-        
+
         <data
             android:scheme="https"
             android:host="yourdomain.com"
             android:pathPrefix="/taskgate" />
     </intent-filter>
-    
+
     <!-- Custom URL Scheme (fallback) -->
     <intent-filter>
         <action android:name="android.intent.action.VIEW" />
         <category android:name="android.intent.category.DEFAULT" />
         <category android:name="android.intent.category.BROWSABLE" />
-        
+
         <data android:scheme="yourapp" />
     </intent-filter>
 </activity>
@@ -140,49 +140,49 @@ TaskGateSDK.cancelTask()
 
 ```kotlin
 class BreathingTaskActivity : AppCompatActivity(), TaskGateSDK.TaskGateListener {
-    
+
     private var currentTaskInfo: TaskGateSDK.TaskInfo? = null
-    
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_breathing)
-        
+
         TaskGateSDK.setListener(this)
         TaskGateSDK.handleIntent(intent)
-        
+
         // Setup UI
         findViewById<Button>(R.id.btnComplete).setOnClickListener {
             onTaskCompleted(openApp = true)
         }
-        
+
         findViewById<Button>(R.id.btnStayFocused).setOnClickListener {
             onTaskCompleted(openApp = false)
         }
-        
+
         findViewById<Button>(R.id.btnCancel).setOnClickListener {
             onTaskCancelled()
         }
     }
-    
+
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         TaskGateSDK.handleIntent(intent)
     }
-    
+
     override fun onTaskReceived(taskInfo: TaskGateSDK.TaskInfo) {
         currentTaskInfo = taskInfo
-        
+
         // Signal that we're ready
         TaskGateSDK.notifyReady()
-        
+
         // Show blocked app name to user
-        findViewById<TextView>(R.id.tvBlockedApp).text = 
+        findViewById<TextView>(R.id.tvBlockedApp).text =
             "Complete this task to open ${taskInfo.appName ?: "the app"}"
-        
+
         // Start your task (e.g., breathing exercise)
         startBreathingExercise()
     }
-    
+
     override fun onTaskRequested(taskId: String, params: Map<String, String>) {
         // Handle specific task types
         when {
@@ -191,7 +191,7 @@ class BreathingTaskActivity : AppCompatActivity(), TaskGateSDK.TaskGateListener 
             else -> startDefaultTask()
         }
     }
-    
+
     private fun onTaskCompleted(openApp: Boolean) {
         if (openApp) {
             TaskGateSDK.reportCompletion(TaskGateSDK.CompletionStatus.OPEN)
@@ -200,12 +200,12 @@ class BreathingTaskActivity : AppCompatActivity(), TaskGateSDK.TaskGateListener 
         }
         finish()
     }
-    
+
     private fun onTaskCancelled() {
         TaskGateSDK.cancelTask()
         finish()
     }
-    
+
     override fun onBackPressed() {
         // Treat back press as cancellation
         TaskGateSDK.cancelTask()
@@ -220,51 +220,51 @@ class BreathingTaskActivity : AppCompatActivity(), TaskGateSDK.TaskGateListener 
 
 ### Initialization
 
-| Method | Description |
-|--------|-------------|
-| `initialize(context, providerId)` | Initialize SDK with your provider ID |
-| `setListener(listener)` | Set callback listener for task events |
+| Method                            | Description                           |
+| --------------------------------- | ------------------------------------- |
+| `initialize(context, providerId)` | Initialize SDK with your provider ID  |
+| `setListener(listener)`           | Set callback listener for task events |
 
 ### Handling Requests
 
-| Method | Description |
-|--------|-------------|
+| Method                 | Description                         |
+| ---------------------- | ----------------------------------- |
 | `handleIntent(intent)` | Parse incoming intent from TaskGate |
-| `handleUri(uri)` | Parse incoming URI directly |
+| `handleUri(uri)`       | Parse incoming URI directly         |
 
 ### Task Lifecycle
 
-| Method | Description |
-|--------|-------------|
-| `notifyReady()` | Signal that your app is loaded and ready to show the task |
-| `reportCompletion(status)` | Report task outcome |
-| `cancelTask()` | Shorthand for `reportCompletion(CANCELLED)` |
+| Method                     | Description                                               |
+| -------------------------- | --------------------------------------------------------- |
+| `notifyReady()`            | Signal that your app is loaded and ready to show the task |
+| `reportCompletion(status)` | Report task outcome                                       |
+| `cancelTask()`             | Shorthand for `reportCompletion(CANCELLED)`               |
 
 ### Completion Status
 
-| Status | User Action |
-|--------|-------------|
-| `OPEN` | Completed task, wants to open the blocked app |
-| `FOCUS` | Completed task, wants to stay focused (no app launch) |
-| `CANCELLED` | Skipped or cancelled the task |
+| Status      | User Action                                           |
+| ----------- | ----------------------------------------------------- |
+| `OPEN`      | Completed task, wants to open the blocked app         |
+| `FOCUS`     | Completed task, wants to stay focused (no app launch) |
+| `CANCELLED` | Skipped or cancelled the task                         |
 
 ### TaskInfo Properties
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `taskId` | String | Unique task identifier (e.g., "breathing_30s") |
-| `sessionId` | String | Session ID for this task attempt |
-| `callbackUrl` | String | URL to call when task completes |
-| `appName` | String? | Name of the blocked app (for display) |
-| `additionalParams` | Map | Extra parameters from TaskGate |
+| Property           | Type    | Description                                    |
+| ------------------ | ------- | ---------------------------------------------- |
+| `taskId`           | String  | Unique task identifier (e.g., "breathing_30s") |
+| `sessionId`        | String  | Session ID for this task attempt               |
+| `callbackUrl`      | String  | URL to call when task completes                |
+| `appName`          | String? | Name of the blocked app (for display)          |
+| `additionalParams` | Map     | Extra parameters from TaskGate                 |
 
 ### Utility Methods
 
-| Method | Description |
-|--------|-------------|
-| `hasActiveSession()` | Check if there's an active task session |
-| `getCurrentTaskId()` | Get the current task ID |
-| `getCurrentSessionId()` | Get the current session ID |
+| Method                  | Description                             |
+| ----------------------- | --------------------------------------- |
+| `hasActiveSession()`    | Check if there's an active task session |
+| `getCurrentTaskId()`    | Get the current task ID                 |
+| `getCurrentSessionId()` | Get the current session ID              |
 
 ---
 
