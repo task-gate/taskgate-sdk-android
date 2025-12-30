@@ -2,6 +2,75 @@
 
 Enable your Android app to provide micro-tasks for TaskGate users.
 
+---
+
+## Full Integration Guide
+
+### What You Need vs What SDK Handles
+
+| Component | You Handle | SDK Handles |
+|-----------|------------|-------------|
+| **AndroidManifest deep link config** | ✅ Required | - |
+| **Pass URL to SDK** | ✅ One line | - |
+| **Parse URL parameters** | - | ✅ Automatic |
+| **Router setup for `/taskgate/start`** | ❌ Not needed | ✅ SDK parses |
+| **Show task UI** | ✅ Your design | - |
+| **Signal ready / completion** | ✅ Call SDK methods | - |
+
+### Integration Flow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        YOUR APP SETUP                           │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. AndroidManifest.xml (Platform Config)                       │
+│     └── intent-filter for your scheme/domain                    │
+│                                                                 │
+│  2. Application.onCreate()                                      │
+│     └── TaskGateSDK.initialize(this, "your_provider_id")        │
+│                                                                 │
+│  3. TaskActivity.onCreate() / onNewIntent()                     │
+│     └── TaskGateSDK.handleIntent(intent)  ← One line only!      │
+│                                                                 │
+│  4. TaskGateSDK.TaskGateListener callback                       │
+│     └── onTaskReceived(taskInfo) → Show your task UI            │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+
+                              ↓
+
+┌─────────────────────────────────────────────────────────────────┐
+│                      SDK HANDLES FOR YOU                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ✅ Checks if URL path contains "taskgate"                      │
+│  ✅ Parses task_id, callback_url, session_id, app_name          │
+│  ✅ Parses additional custom parameters                         │
+│  ✅ Stores session state for completion callbacks               │
+│  ✅ Sends ready signal to TaskGate                              │
+│  ✅ Sends completion with proper URL format                     │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### You DON'T Need
+
+❌ **No router/navigation setup for TaskGate paths:**
+```kotlin
+// NOT NEEDED - SDK handles URL parsing
+GoRoute(path: "/taskgate/start", ...)  // ← Don't need this
+```
+
+❌ **No manual URL parameter parsing:**
+```kotlin
+// NOT NEEDED - SDK does this
+val taskId = intent.data?.getQueryParameter("task_id")  // ← Don't need this
+val callbackUrl = intent.data?.getQueryParameter("callback_url")  // ← Don't need this
+```
+
+---
+
 ## Installation
 
 ### Gradle (JitPack)
