@@ -57,6 +57,12 @@ object TaskGateSDK {
     private const val TAG = "TaskGateSDK"
     private const val TASKGATE_SCHEME = "taskgate"
     internal const val EXTRA_FROM_TASKGATE = "com.taskgate.FROM_TASKGATE"
+    private const val PREFS_NAME = "TaskGateSDKPrefs"
+    private const val KEY_PENDING_TASK_ID = "pending_task_id"
+    private const val KEY_PENDING_SESSION_ID = "pending_session_id"
+    private const val KEY_PENDING_CALLBACK_URL = "pending_callback_url"
+    private const val KEY_PENDING_APP_NAME = "pending_app_name"
+    private const val KEY_PENDING_TIMESTAMP = "pending_timestamp"
     
     private var applicationContext: Context? = null
     private var providerId: String? = null
@@ -205,7 +211,7 @@ object TaskGateSDK {
             }
         }
         
-        // Store task info - will be delivered when notifyReady() is called
+        // Store task info - will be delivered when showTask() is called
         val taskInfo = TaskInfo(
             taskId = taskId,
             sessionId = sessionId,
@@ -215,10 +221,76 @@ object TaskGateSDK {
         )
         
         pendingTaskInfo = taskInfo
-        Log.d(TAG, "[STEP 2] handleUri() - Task STORED in pendingTaskInfo. NOT delivered yet.")
-        Log.d(TAG, "[STEP 2] Waiting for notifyReady() to be called...")
+        
+        // Also persist to SharedPreferences so Flutter can check on startup
+        // This allows Flutter to set the correct initial route BEFORE the router is created
+        savePendingTaskToPrefs(taskInfo)
+        
+        Log.d(TAG, "[STEP 2] handleUri() - Task STORED in pendingTaskInfo AND SharedPreferences.")
+        Log.d(TAG, "[STEP 2] Flutter should check getPendingTaskId() before creating router.")
         
         return true
+    }
+    
+    /**
+     * Get the pending task ID from SharedPreferences.
+     * Call this in Flutter BEFORE creating the router to set the correct initial location.
+     * 
+     * @return The pending task ID, or null if no task is pending
+     */
+    @JvmStatic
+    fun getPendingTaskId(): String? {
+        val context = applicationContext ?: return null
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val taskId = prefs.getString(KEY_PENDING_TASK_ID, null)
+        val timestamp = prefs.getLong(KEY_PENDING_TIMESTAMP, 0)
+        
+        // Ignore stale tasks (older than 30 seconds)
+        val ageMs = System.currentTimeMillis() - timestamp
+        if (taskId != null && ageMs > 30000) {
+            Log.d(TAG, "getPendingTaskId() - Task is stale (${ageMs}ms old), clearing")
+            clearPendingTaskFromPrefs()
+            return null
+        }
+        
+        Log.d(TAG, "getPendingTaskId() - Found: $taskId (${ageMs}ms old)")
+        return taskId
+    }
+    
+    /**
+     * Get the pending app name from SharedPreferences.
+     */
+    @JvmStatic
+    fun getPendingAppName(): String? {
+        val context = applicationContext ?: return null
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(KEY_PENDING_APP_NAME, null)
+    }
+    
+    private fun savePendingTaskToPrefs(taskInfo: TaskInfo) {
+        val context = applicationContext ?: return
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit()
+            .putString(KEY_PENDING_TASK_ID, taskInfo.taskId)
+            .putString(KEY_PENDING_SESSION_ID, taskInfo.sessionId)
+            .putString(KEY_PENDING_CALLBACK_URL, taskInfo.callbackUrl)
+            .putString(KEY_PENDING_APP_NAME, taskInfo.appName)
+            .putLong(KEY_PENDING_TIMESTAMP, System.currentTimeMillis())
+            .apply()
+        Log.d(TAG, "Saved pending task to SharedPreferences: ${taskInfo.taskId}")
+    }
+    
+    private fun clearPendingTaskFromPrefs() {
+        val context = applicationContext ?: return
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit()
+            .remove(KEY_PENDING_TASK_ID)
+            .remove(KEY_PENDING_SESSION_ID)
+            .remove(KEY_PENDING_CALLBACK_URL)
+            .remove(KEY_PENDING_APP_NAME)
+            .remove(KEY_PENDING_TIMESTAMP)
+            .apply()
+        Log.d(TAG, "Cleared pending task from SharedPreferences")
     }
     
     /**
@@ -294,6 +366,9 @@ object TaskGateSDK {
      * 1. Deliver the pending task info to your listener via onTaskReceived()
      * 2. Your app should then navigate to the task screen
      * 
+     * NOTE: If you already used getPendingTaskId() to set the initial route,
+     * you may not need to call this - the task info is already known.
+     * 
      * @return true if a task was delivered, false if no pending task
      */
     @JvmStatic
@@ -307,12 +382,24 @@ object TaskGateSDK {
             listener?.onTaskReceived(taskInfo)
             listener?.onTaskRequested(taskInfo.taskId, taskInfo.additionalParams)
             pendingTaskInfo = null
+            clearPendingTaskFromPrefs()  // Also clear from SharedPreferences
             Log.d(TAG, "[STEP 6] onTaskReceived() completed. Navigate to your task screen now.")
             return true
         } else {
             Log.w(TAG, "[STEP 5] No pending task to deliver")
             return false
         }
+    }
+    
+    /**
+     * Clear the pending task without delivering it.
+     * Call this after you've used getPendingTaskId() to set the initial route.
+     */
+    @JvmStatic
+    fun clearPendingTask() {
+        pendingTaskInfo = null
+        clearPendingTaskFromPrefs()
+        Log.d(TAG, "Pending task cleared")
     }
     
     /**
