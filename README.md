@@ -8,14 +8,14 @@ Enable your Android app to provide micro-tasks for TaskGate users.
 
 ### What You Need vs What SDK Handles
 
-| Component | You Handle | SDK Handles |
-|-----------|------------|-------------|
-| **AndroidManifest deep link config** | ✅ Required | - |
-| **Pass URL to SDK** | ✅ One line | - |
-| **Parse URL parameters** | - | ✅ Automatic |
-| **Router setup for `/taskgate/start`** | ❌ Not needed | ✅ SDK parses |
-| **Show task UI** | ✅ Your design | - |
-| **Signal ready / completion** | ✅ Call SDK methods | - |
+| Component                              | You Handle          | SDK Handles   |
+| -------------------------------------- | ------------------- | ------------- |
+| **AndroidManifest deep link config**   | ✅ Required         | -             |
+| **Pass URL to SDK**                    | ✅ One line         | -             |
+| **Parse URL parameters**               | -                   | ✅ Automatic  |
+| **Router setup for `/taskgate/start`** | ❌ Not needed       | ✅ SDK parses |
+| **Show task UI**                       | ✅ Your design      | -             |
+| **Signal ready / completion**          | ✅ Call SDK methods | -             |
 
 ### Integration Flow
 
@@ -54,15 +54,53 @@ Enable your Android app to provide micro-tasks for TaskGate users.
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+### Understanding the Flow: Cold Boot Handling
+
+The SDK is designed for **cold boot scenarios** where your app may take time to initialize:
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                     TIMELINE OF EVENTS                           │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  1. Deep link arrives                                            │
+│     └── handleIntent() / handleUri()                             │
+│     └── SDK STORES task info internally (does NOT call listener)│
+│     └── Returns true (URL was handled)                           │
+│                                                                  │
+│  2. Your app initializes                                         │
+│     └── Load UI, initialize services, etc.                       │
+│     └── Task info is safely stored, waiting...                   │
+│                                                                  │
+│  3. App is ready                                                 │
+│     └── You call notifyReady()                                   │
+│     └── SDK NOW delivers task via onTaskReceived()               │
+│     └── SDK signals TaskGate to dismiss redirect screen          │
+│                                                                  │
+│  4. User completes task                                          │
+│     └── You call reportCompletion()                              │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Why this matters:**
+
+- ✅ Your app can fully initialize before receiving the task
+- ✅ No race condition between deep link and app startup
+- ✅ `onTaskReceived()` is guaranteed to fire only when you're ready
+- ✅ TaskGate knows exactly when to dismiss its redirect screen
+
 ### You DON'T Need
 
 ❌ **No router/navigation setup for TaskGate paths:**
+
 ```kotlin
 // NOT NEEDED - SDK handles URL parsing
 GoRoute(path: "/taskgate/start", ...)  // ← Don't need this
 ```
 
 ❌ **No manual URL parameter parsing:**
+
 ```kotlin
 // NOT NEEDED - SDK does this
 val taskId = intent.data?.getQueryParameter("task_id")  // ← Don't need this
@@ -128,23 +166,27 @@ class TaskActivity : AppCompatActivity(), TaskGateSDK.TaskGateListener {
         // Set listener for task events
         TaskGateSDK.setListener(this)
 
-        // Handle the incoming intent
+        // Handle the incoming intent (stores task, doesn't deliver yet)
         TaskGateSDK.handleIntent(intent)
+
+        // ... your initialization code ...
+
+        // When your UI is ready, call notifyReady()
+        // This triggers onTaskReceived() and signals TaskGate
+        TaskGateSDK.notifyReady()
     }
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
-        // Handle when app is already running
+        // Handle when app is already running (warm start)
         TaskGateSDK.handleIntent(intent)
+        TaskGateSDK.notifyReady()  // Already initialized, so ready immediately
     }
 
     override fun onTaskReceived(taskInfo: TaskGateSDK.TaskInfo) {
-        // TaskGate sent a task request
+        // This is called AFTER notifyReady() - your app is guaranteed ready
         Log.d("Task", "Received task: ${taskInfo.taskId}")
         Log.d("Task", "Blocked app: ${taskInfo.appName}")
-
-        // Your task UI is ready - notify TaskGate
-        TaskGateSDK.notifyReady()
 
         // Show your task based on taskInfo.taskId
         showTask(taskInfo)
@@ -217,6 +259,8 @@ class BreathingTaskActivity : AppCompatActivity(), TaskGateSDK.TaskGateListener 
         setContentView(R.layout.activity_breathing)
 
         TaskGateSDK.setListener(this)
+
+        // Handle intent (stores task internally)
         TaskGateSDK.handleIntent(intent)
 
         // Setup UI
@@ -231,18 +275,20 @@ class BreathingTaskActivity : AppCompatActivity(), TaskGateSDK.TaskGateListener 
         findViewById<Button>(R.id.btnCancel).setOnClickListener {
             onTaskCancelled()
         }
+
+        // UI is ready - now trigger task delivery
+        TaskGateSDK.notifyReady()
     }
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         TaskGateSDK.handleIntent(intent)
+        TaskGateSDK.notifyReady()  // Warm start - ready immediately
     }
 
     override fun onTaskReceived(taskInfo: TaskGateSDK.TaskInfo) {
+        // Called after notifyReady() - app is guaranteed ready
         currentTaskInfo = taskInfo
-
-        // Signal that we're ready
-        TaskGateSDK.notifyReady()
 
         // Show blocked app name to user
         findViewById<TextView>(R.id.tvBlockedApp).text =
@@ -296,18 +342,18 @@ class BreathingTaskActivity : AppCompatActivity(), TaskGateSDK.TaskGateListener 
 
 ### Handling Requests
 
-| Method                 | Description                         |
-| ---------------------- | ----------------------------------- |
-| `handleIntent(intent)` | Parse incoming intent from TaskGate |
-| `handleUri(uri)`       | Parse incoming URI directly         |
+| Method                 | Description                                                           |
+| ---------------------- | --------------------------------------------------------------------- |
+| `handleIntent(intent)` | Parse and **store** incoming task from TaskGate (doesn't deliver yet) |
+| `handleUri(uri)`       | Parse and **store** incoming URI directly (doesn't deliver yet)       |
 
 ### Task Lifecycle
 
-| Method                     | Description                                               |
-| -------------------------- | --------------------------------------------------------- |
-| `notifyReady()`            | Signal that your app is loaded and ready to show the task |
-| `reportCompletion(status)` | Report task outcome                                       |
-| `cancelTask()`             | Shorthand for `reportCompletion(CANCELLED)`               |
+| Method                     | Description                                                                              |
+| -------------------------- | ---------------------------------------------------------------------------------------- |
+| `notifyReady()`            | **Triggers delivery** of stored task via `onTaskReceived()` + signals TaskGate app ready |
+| `reportCompletion(status)` | Report task outcome                                                                      |
+| `cancelTask()`             | Shorthand for `reportCompletion(CANCELLED)`                                              |
 
 ### Completion Status
 
