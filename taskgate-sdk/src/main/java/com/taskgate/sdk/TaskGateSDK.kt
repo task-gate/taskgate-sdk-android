@@ -143,6 +143,102 @@ object TaskGateSDK {
     }
     
     /**
+     * Check if the intent is a TaskGate intent (either deep link or FROM_TASKGATE extra).
+     * This is useful for checking if your app was launched/resumed by TaskGate.
+     * 
+     * @param intent The intent to check
+     * @return true if this is a TaskGate-related intent
+     */
+    @JvmStatic
+    fun isTaskGateIntent(intent: Intent?): Boolean {
+        if (intent == null) return false
+        
+        // Check for FROM_TASKGATE extra (set by TrampolineActivity)
+        if (intent.getBooleanExtra(EXTRA_FROM_TASKGATE, false)) {
+            return true
+        }
+        
+        // Check for TaskGate deep link
+        val uri = intent.data
+        if (uri != null && uri.path?.contains("taskgate") == true) {
+            return true
+        }
+        
+        return false
+    }
+    
+    /**
+     * Handle onNewIntent for warm start scenarios.
+     * 
+     * Call this in your MainActivity's onNewIntent() to handle TaskGate intents
+     * when your app is already running (warm start).
+     * 
+     * This will:
+     * 1. Check if the intent is from TaskGate
+     * 2. Parse the task info if it's a deep link
+     * 3. Signal TaskGate that we received the intent
+     * 4. Call showTask() to deliver the task to your listener
+     * 
+     * Usage:
+     * ```kotlin
+     * override fun onNewIntent(intent: Intent) {
+     *     super.onNewIntent(intent)
+     *     if (TaskGateSDK.handleNewIntent(intent)) {
+     *         // TaskGate handled it, no further action needed
+     *         return
+     *     }
+     *     // Handle other intents...
+     * }
+     * ```
+     * 
+     * @param intent The new intent received
+     * @return true if the intent was handled by TaskGate SDK
+     */
+    @JvmStatic
+    fun handleNewIntent(intent: Intent?): Boolean {
+        if (intent == null) return false
+        
+        Log.d(TAG, "handleNewIntent() - Checking intent")
+        
+        // Case 1: FROM_TASKGATE extra (warm start via TrampolineActivity)
+        if (intent.getBooleanExtra(EXTRA_FROM_TASKGATE, false)) {
+            Log.d(TAG, "handleNewIntent() - FROM_TASKGATE detected (warm start)")
+            
+            // Check if we have pending task info from the trampoline
+            if (hasPendingTask()) {
+                showTask()
+                return true
+            }
+            
+            // Try to get task info from intent extras
+            val taskId = intent.getStringExtra("taskgate_task_id")
+            if (taskId != null) {
+                Log.d(TAG, "handleNewIntent() - Found task in intent extras: $taskId")
+                val sessionId = intent.getStringExtra("taskgate_session_id") ?: generateSessionId()
+                val appName = intent.getStringExtra("taskgate_app_name")
+                
+                // Reconstruct task info and deliver
+                listener?.onTaskRequested(taskId, mapOf("app_name" to (appName ?: "")))
+                return true
+            }
+            
+            Log.w(TAG, "handleNewIntent() - FROM_TASKGATE but no task info found")
+            return true // Still consumed the intent
+        }
+        
+        // Case 2: Direct deep link (bypass trampoline scenario)
+        val uri = intent.data
+        if (uri != null && handleUri(uri)) {
+            Log.d(TAG, "handleNewIntent() - Deep link handled, signaling TaskGate")
+            notifyReady()
+            showTask()
+            return true
+        }
+        
+        return false
+    }
+    
+    /**
      * Check if there's a pending task waiting to be shown
      */
     @JvmStatic
