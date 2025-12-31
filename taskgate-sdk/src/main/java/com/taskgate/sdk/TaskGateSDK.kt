@@ -1,8 +1,10 @@
 package com.taskgate.sdk
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Bundle
 import android.util.Log
 
 /**
@@ -13,21 +15,48 @@ import android.util.Log
  * - Signal when app is ready (cold boot complete)
  * - Report task completion status
  * 
- * Usage:
+ * ## Quick Setup (Recommended)
+ * 
+ * 1. Initialize in Application.onCreate():
  * ```kotlin
- * // Initialize in Application.onCreate()
- * TaskGateSDK.initialize(this, "your_provider_id")
+ * TaskGateSDK.initialize(this, "your_provider_id", YourTaskActivity::class.java)
+ * ```
  * 
- * // When your app is ready to show the task
- * TaskGateSDK.notifyReady()
+ * 2. Add to AndroidManifest.xml:
+ * ```xml
+ * <activity
+ *     android:name="com.taskgate.sdk.TaskGateTrampolineActivity"
+ *     android:theme="@android:style/Theme.Translucent.NoTitleBar"
+ *     android:noHistory="true"
+ *     android:excludeFromRecents="true"
+ *     android:exported="true">
+ *     <intent-filter android:autoVerify="true">
+ *         <action android:name="android.intent.action.VIEW" />
+ *         <category android:name="android.intent.category.DEFAULT" />
+ *         <category android:name="android.intent.category.BROWSABLE" />
+ *         <data android:scheme="https" android:host="yourdomain.com" android:pathPrefix="/taskgate" />
+ *     </intent-filter>
+ * </activity>
+ * ```
  * 
- * // When task is completed
+ * 3. In your TaskActivity, call showTask() when ready:
+ * ```kotlin
+ * override fun onCreate(savedInstanceState: Bundle?) {
+ *     super.onCreate(savedInstanceState)
+ *     // Your initialization...
+ *     TaskGateSDK.showTask() // Delivers task info to listener
+ * }
+ * ```
+ * 
+ * 4. Report completion when done:
+ * ```kotlin
  * TaskGateSDK.reportCompletion(TaskGateSDK.CompletionStatus.OPEN)
  * ```
  */
 object TaskGateSDK {
     private const val TAG = "TaskGateSDK"
     private const val TASKGATE_SCHEME = "taskgate"
+    internal const val EXTRA_FROM_TASKGATE = "com.taskgate.FROM_TASKGATE"
     
     private var applicationContext: Context? = null
     private var providerId: String? = null
@@ -35,6 +64,7 @@ object TaskGateSDK {
     private var callbackUrl: String? = null
     private var currentTaskId: String? = null
     private var pendingTaskInfo: TaskInfo? = null
+    private var taskActivityClass: Class<out Activity>? = null
     
     /**
      * Task completion status
@@ -77,16 +107,45 @@ object TaskGateSDK {
      * 
      * @param context Application context
      * @param providerId Your unique provider ID (assigned by TaskGate)
+     * @param taskActivityClass The Activity class to launch for handling tasks.
+     *                          This activity will be started after the trampoline signals TaskGate.
+     *                          The activity should call showTask() when ready.
      */
-    fun initialize(context: Context, providerId: String) {
+    @JvmStatic
+    @JvmOverloads
+    fun initialize(
+        context: Context, 
+        providerId: String,
+        taskActivityClass: Class<out Activity>? = null
+    ) {
         this.applicationContext = context.applicationContext
         this.providerId = providerId
+        this.taskActivityClass = taskActivityClass
         Log.d(TAG, "TaskGate SDK initialized for provider: $providerId")
+        if (taskActivityClass != null) {
+            Log.d(TAG, "Task activity configured: ${taskActivityClass.simpleName}")
+        }
     }
+    
+    /**
+     * Check if this activity was launched by TaskGate SDK
+     * Use this in your task activity to know if it should call showTask()
+     */
+    @JvmStatic
+    fun isLaunchedByTaskGate(intent: Intent?): Boolean {
+        return intent?.getBooleanExtra(EXTRA_FROM_TASKGATE, false) == true
+    }
+    
+    /**
+     * Check if there's a pending task waiting to be shown
+     */
+    @JvmStatic
+    fun hasPendingTask(): Boolean = pendingTaskInfo != null
     
     /**
      * Set the listener for TaskGate events
      */
+    @JvmStatic
     fun setListener(listener: TaskGateListener?) {
         this.listener = listener
     }
@@ -95,9 +154,12 @@ object TaskGateSDK {
      * Parse an incoming deep link from TaskGate
      * Call this in your Activity's onCreate() and onNewIntent()
      * 
+     * NOTE: If using TaskGateTrampolineActivity, you don't need to call this manually.
+     * 
      * @param intent The incoming intent
      * @return true if the intent was handled by TaskGate SDK
      */
+    @JvmStatic
     fun handleIntent(intent: Intent?): Boolean {
         val uri = intent?.data ?: return false
         return handleUri(uri)
@@ -109,6 +171,7 @@ object TaskGateSDK {
      * @param uri The incoming URI
      * @return true if the URI was handled by TaskGate SDK
      */
+    @JvmStatic
     fun handleUri(uri: Uri): Boolean {
         // Check if this is a TaskGate request
         // Expected format: https://yourdomain.com/taskgate/start?task_id=xxx&callback_url=xxx&session_id=xxx
@@ -159,36 +222,25 @@ object TaskGateSDK {
     }
     
     /**
-     * Notify TaskGate that the app is ready (cold boot complete)
-     * Call this when your task UI is ready to be displayed.
+     * Signal TaskGate that your app received the deep link.
      * 
-     * This will:
-     * 1. Deliver the pending task info to your listener via onTaskReceived()
-     * 2. Signal TaskGate to dismiss the redirect screen
+     * NOTE: If using TaskGateTrampolineActivity, this is called automatically.
+     * 
+     * Call this IMMEDIATELY in your trampoline activity, then finish() the activity.
+     * This keeps TaskGate's redirect screen visible while your app initializes.
+     * After your app is ready, call showTask() to bring your task UI to foreground.
      */
+    @JvmStatic
     fun notifyReady() {
         val sessionId = currentSessionId ?: run {
             Log.w(TAG, "No active session - cannot notify ready")
             return
         }
         
-        Log.d(TAG, "[STEP 3] notifyReady() called - App says it's ready")
+        Log.d(TAG, "[STEP 3] notifyReady() called - Signaling TaskGate we received the link")
         
-        // Deliver pending task to listener
-        pendingTaskInfo?.let { taskInfo ->
-            Log.d(TAG, "[STEP 4] NOW delivering task to listener: taskId=${taskInfo.taskId}")
-            Log.d(TAG, "[STEP 4] Calling onTaskReceived() NOW (after notifyReady)")
-            listener?.onTaskReceived(taskInfo)
-            listener?.onTaskRequested(taskInfo.taskId, taskInfo.additionalParams)
-            pendingTaskInfo = null
-            Log.d(TAG, "[STEP 4] onTaskReceived() completed")
-        } ?: run {
-            Log.d(TAG, "[STEP 3] No pending task to deliver")
-        }
-        
-        Log.d(TAG, "Notifying TaskGate: app ready (session=$sessionId)")
-        
-        // Signal TaskGate to dismiss redirect screen
+        // Signal TaskGate to keep showing redirect screen
+        // Partner's trampoline activity should finish() after this
         val uri = Uri.Builder()
             .scheme(TASKGATE_SCHEME)
             .authority("partner-ready")
@@ -197,6 +249,70 @@ object TaskGateSDK {
             .build()
         
         launchUri(uri)
+        Log.d(TAG, "[STEP 3] TaskGate signaled. Now finish() your trampoline activity.")
+    }
+    
+    /**
+     * Launch the configured task activity.
+     * Called internally by TaskGateTrampolineActivity after signaling TaskGate.
+     */
+    internal fun launchTaskActivity() {
+        val context = applicationContext ?: run {
+            Log.e(TAG, "SDK not initialized - cannot launch task activity")
+            return
+        }
+        
+        val activityClass = taskActivityClass ?: run {
+            Log.w(TAG, "No task activity configured - partner must handle navigation manually")
+            return
+        }
+        
+        Log.d(TAG, "[STEP 4] Launching task activity: ${activityClass.simpleName}")
+        
+        try {
+            val intent = Intent(context, activityClass).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                putExtra(EXTRA_FROM_TASKGATE, true)
+                // Pass task info as extras for convenience
+                pendingTaskInfo?.let { task ->
+                    putExtra("taskgate_task_id", task.taskId)
+                    putExtra("taskgate_session_id", task.sessionId)
+                    putExtra("taskgate_app_name", task.appName)
+                }
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to launch task activity", e)
+        }
+    }
+    
+    /**
+     * Deliver the task info and bring your task UI to foreground.
+     * Call this when your app is fully initialized and ready to show the task screen.
+     * 
+     * This will:
+     * 1. Deliver the pending task info to your listener via onTaskReceived()
+     * 2. Your app should then navigate to the task screen
+     * 
+     * @return true if a task was delivered, false if no pending task
+     */
+    @JvmStatic
+    fun showTask(): Boolean {
+        Log.d(TAG, "[STEP 5] showTask() called - App is ready to show task")
+        
+        // Deliver pending task to listener
+        val taskInfo = pendingTaskInfo
+        if (taskInfo != null) {
+            Log.d(TAG, "[STEP 6] NOW delivering task to listener: taskId=${taskInfo.taskId}")
+            listener?.onTaskReceived(taskInfo)
+            listener?.onTaskRequested(taskInfo.taskId, taskInfo.additionalParams)
+            pendingTaskInfo = null
+            Log.d(TAG, "[STEP 6] onTaskReceived() completed. Navigate to your task screen now.")
+            return true
+        } else {
+            Log.w(TAG, "[STEP 5] No pending task to deliver")
+            return false
+        }
     }
     
     /**
@@ -204,6 +320,7 @@ object TaskGateSDK {
      * 
      * @param status The completion status (OPEN, FOCUS, or CANCELLED)
      */
+    @JvmStatic
     fun reportCompletion(status: CompletionStatus) {
         val callback = callbackUrl ?: run {
             Log.w(TAG, "No callback URL - cannot report completion")
@@ -233,6 +350,7 @@ object TaskGateSDK {
     /**
      * Cancel the current task and notify TaskGate
      */
+    @JvmStatic
     fun cancelTask() {
         reportCompletion(CompletionStatus.CANCELLED)
     }
@@ -240,16 +358,19 @@ object TaskGateSDK {
     /**
      * Get the current session ID if a task is active
      */
+    @JvmStatic
     fun getCurrentSessionId(): String? = currentSessionId
     
     /**
      * Get the current task ID if a task is active
      */
+    @JvmStatic
     fun getCurrentTaskId(): String? = currentTaskId
     
     /**
      * Check if there's an active task session
      */
+    @JvmStatic
     fun hasActiveSession(): Boolean = currentSessionId != null
     
     private fun launchUri(uri: Uri) {

@@ -4,107 +4,189 @@ Enable your Android app to provide micro-tasks for TaskGate users.
 
 ---
 
-## Full Integration Guide
+## Quick Start (Recommended)
 
-### What You Need vs What SDK Handles
+The SDK provides a built-in `TaskGateTrampolineActivity` that handles everything automatically.
 
-| Component                              | You Handle          | SDK Handles   |
-| -------------------------------------- | ------------------- | ------------- |
-| **AndroidManifest deep link config**   | ✅ Required         | -             |
-| **Pass URL to SDK**                    | ✅ One line         | -             |
-| **Parse URL parameters**               | -                   | ✅ Automatic  |
-| **Router setup for `/taskgate/start`** | ❌ Not needed       | ✅ SDK parses |
-| **Show task UI**                       | ✅ Your design      | -             |
-| **Signal ready / completion**          | ✅ Call SDK methods | -             |
+### 1. Initialize the SDK
 
-### Integration Flow
+In your `Application` class:
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        YOUR APP SETUP                           │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  1. AndroidManifest.xml (Platform Config)                       │
-│     └── intent-filter for your scheme/domain                    │
-│                                                                 │
-│  2. Application.onCreate()                                      │
-│     └── TaskGateSDK.initialize(this, "your_provider_id")        │
-│                                                                 │
-│  3. TaskActivity.onCreate() / onNewIntent()                     │
-│     └── TaskGateSDK.handleIntent(intent)  ← One line only!      │
-│                                                                 │
-│  4. TaskGateSDK.TaskGateListener callback                       │
-│     └── onTaskReceived(taskInfo) → Show your task UI            │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+```kotlin
+class MyApplication : Application() {
+    override fun onCreate() {
+        super.onCreate()
 
-                              ↓
-
-┌─────────────────────────────────────────────────────────────────┐
-│                      SDK HANDLES FOR YOU                        │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ✅ Checks if URL path contains "taskgate"                      │
-│  ✅ Parses task_id, callback_url, session_id, app_name          │
-│  ✅ Parses additional custom parameters                         │
-│  ✅ Stores session state for completion callbacks               │
-│  ✅ Sends ready signal to TaskGate                              │
-│  ✅ Sends completion with proper URL format                     │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+        // Pass your task activity class - SDK will launch it automatically
+        TaskGateSDK.initialize(
+            context = this,
+            providerId = "your_provider_id",
+            taskActivityClass = TaskActivity::class.java
+        )
+    }
+}
 ```
 
-### Understanding the Flow: Cold Boot Handling
+### 2. Add SDK Trampoline to Manifest
 
-The SDK is designed for **cold boot scenarios** where your app may take time to initialize:
+```xml
+<!-- SDK's trampoline - handles deep link automatically -->
+<activity
+    android:name="com.taskgate.sdk.TaskGateTrampolineActivity"
+    android:exported="true"
+    android:theme="@android:style/Theme.Translucent.NoTitleBar"
+    android:noHistory="true"
+    android:excludeFromRecents="true">
+
+    <intent-filter android:autoVerify="true">
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data
+            android:scheme="https"
+            android:host="yourdomain.com"
+            android:pathPrefix="/taskgate" />
+    </intent-filter>
+</activity>
+
+<!-- Your task activity - launched by SDK -->
+<activity
+    android:name=".TaskActivity"
+    android:exported="false" />
+```
+
+### 3. Handle Tasks in Your Activity
+
+```kotlin
+class TaskActivity : AppCompatActivity(), TaskGateSDK.TaskGateListener {
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_task)
+
+        TaskGateSDK.setListener(this)
+
+        // Check if launched by TaskGate
+        if (TaskGateSDK.isLaunchedByTaskGate(intent)) {
+            // Deliver task when ready
+            TaskGateSDK.showTask()
+        }
+    }
+
+    override fun onTaskReceived(taskInfo: TaskGateSDK.TaskInfo) {
+        // Display your task UI
+        Log.d("Task", "Received: ${taskInfo.taskId}, blocked app: ${taskInfo.appName}")
+        showTask(taskInfo)
+    }
+
+    override fun onTaskRequested(taskId: String, params: Map<String, String>) {
+        // Alternative callback with just task ID
+    }
+}
+```
+
+### 4. Report Completion
+
+```kotlin
+// User completed task and wants to open the blocked app
+TaskGateSDK.reportCompletion(TaskGateSDK.CompletionStatus.OPEN)
+
+// User wants to stay focused
+TaskGateSDK.reportCompletion(TaskGateSDK.CompletionStatus.FOCUS)
+
+// User cancelled
+TaskGateSDK.cancelTask()
+```
+
+---
+
+## What the SDK Handles
+
+| Component                     | You Handle         | SDK Handles  |
+| ----------------------------- | ------------------ | ------------ |
+| **Trampoline activity**       | ❌ Not needed      | ✅ Provided  |
+| **Deep link parsing**         | -                  | ✅ Automatic |
+| **Signal TaskGate ready**     | -                  | ✅ Automatic |
+| **Launch your task activity** | -                  | ✅ Automatic |
+| **Show task UI**              | ✅ Your design     | -            |
+| **Report completion**         | ✅ Call SDK method | -            |
+
+---
+
+## How It Works: Trampoline Pattern
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │                     TIMELINE OF EVENTS                           │
 ├──────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  1. Deep link arrives                                            │
-│     └── handleIntent() / handleUri()                             │
-│     └── SDK STORES task info internally (does NOT call listener)│
-│     └── Returns true (URL was handled)                           │
+│  1. TaskGate shows redirect screen (TaskGate = foreground)       │
 │                                                                  │
-│  2. Your app initializes                                         │
-│     └── Load UI, initialize services, etc.                       │
-│     └── Task info is safely stored, waiting...                   │
+│  2. TaskGate launches your deep link                             │
+│     └── TaskGateTrampolineActivity starts (invisible)            │
+│     └── handleIntent() stores task info                          │
+│     └── notifyReady() signals TaskGate "I got it"                │
+│     └── Launches your TaskActivity                               │
+│     └── finish() → Trampoline disappears                         │
+│     └── TaskGate redirect screen stays visible briefly           │
 │                                                                  │
-│  3. App is ready                                                 │
-│     └── You call notifyReady()                                   │
-│     └── SDK NOW delivers task via onTaskReceived()               │
-│     └── SDK signals TaskGate to dismiss redirect screen          │
+│  3. Your TaskActivity.onCreate()                                 │
+│     └── isLaunchedByTaskGate() returns true                      │
+│     └── showTask() delivers task to your listener                │
+│     └── Your app is now foreground with task screen              │
 │                                                                  │
 │  4. User completes task                                          │
-│     └── You call reportCompletion()                              │
+│     └── reportCompletion() → TaskGate handles result             │
 │                                                                  │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-**Why this matters:**
+**Why the trampoline pattern:**
 
-- ✅ Your app can fully initialize before receiving the task
-- ✅ No race condition between deep link and app startup
-- ✅ `onTaskReceived()` is guaranteed to fire only when you're ready
-- ✅ TaskGate knows exactly when to dismiss its redirect screen
+- ✅ TaskGate's redirect screen stays visible during cold boot
+- ✅ User sees smooth transition (redirect → your task screen)
+- ✅ No jarring "home screen flash" from your app
+- ✅ Your app can fully initialize before showing task UI
 
-### You DON'T Need
+---
 
-❌ **No router/navigation setup for TaskGate paths:**
+## Advanced: Custom Trampoline Activity
+
+If you need custom initialization logic, create your own trampoline:
 
 ```kotlin
-// NOT NEEDED - SDK handles URL parsing
-GoRoute(path: "/taskgate/start", ...)  // ← Don't need this
+class MyTrampolineActivity : Activity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        if (TaskGateSDK.handleIntent(intent)) {
+            // Signal TaskGate we received the link
+            TaskGateSDK.notifyReady()
+
+            // Custom: wait for initialization before showing task
+            MyAppInitializer.onReady {
+                TaskGateSDK.showTask()
+                startActivity(Intent(this, TaskActivity::class.java))
+            }
+        }
+
+        // Finish immediately - TaskGate stays visible
+        finish()
+    }
+}
 ```
 
-❌ **No manual URL parameter parsing:**
+**Manifest for custom trampoline:**
 
-```kotlin
-// NOT NEEDED - SDK does this
-val taskId = intent.data?.getQueryParameter("task_id")  // ← Don't need this
-val callbackUrl = intent.data?.getQueryParameter("callback_url")  // ← Don't need this
+```xml
+<activity
+    android:name=".MyTrampolineActivity"
+    android:exported="true"
+    android:theme="@android:style/Theme.Translucent.NoTitleBar"
+    android:noHistory="true"
+    android:excludeFromRecents="true">
+    <!-- intent-filter here -->
+</activity>
 ```
 
 ---
@@ -133,117 +215,7 @@ dependencies {
 
 ### Manual Installation
 
-Copy `TaskGateSDK.kt` to your project under `com.taskgate.sdk` package.
-
----
-
-## Quick Start
-
-### 1. Initialize the SDK
-
-In your `Application` class:
-
-```kotlin
-class MyApplication : Application() {
-    override fun onCreate() {
-        super.onCreate()
-        TaskGateSDK.initialize(this, "your_provider_id")
-    }
-}
-```
-
-### 2. Handle Incoming Deep Links
-
-In your task Activity:
-
-```kotlin
-class TaskActivity : AppCompatActivity(), TaskGateSDK.TaskGateListener {
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_task)
-
-        // Set listener for task events
-        TaskGateSDK.setListener(this)
-
-        // Handle the incoming intent (stores task, doesn't deliver yet)
-        TaskGateSDK.handleIntent(intent)
-
-        // ... your initialization code ...
-
-        // When your UI is ready, call notifyReady()
-        // This triggers onTaskReceived() and signals TaskGate
-        TaskGateSDK.notifyReady()
-    }
-
-    override fun onNewIntent(intent: Intent?) {
-        super.onNewIntent(intent)
-        // Handle when app is already running (warm start)
-        TaskGateSDK.handleIntent(intent)
-        TaskGateSDK.notifyReady()  // Already initialized, so ready immediately
-    }
-
-    override fun onTaskReceived(taskInfo: TaskGateSDK.TaskInfo) {
-        // This is called AFTER notifyReady() - your app is guaranteed ready
-        Log.d("Task", "Received task: ${taskInfo.taskId}")
-        Log.d("Task", "Blocked app: ${taskInfo.appName}")
-
-        // Show your task based on taskInfo.taskId
-        showTask(taskInfo)
-    }
-
-    override fun onTaskRequested(taskId: String, params: Map<String, String>) {
-        // Alternative callback with just task ID
-    }
-}
-```
-
-### 3. Configure Deep Links
-
-Add to your `AndroidManifest.xml`:
-
-```xml
-<activity
-    android:name=".TaskActivity"
-    android:exported="true">
-
-    <!-- HTTPS Deep Links (recommended) -->
-    <intent-filter android:autoVerify="true">
-        <action android:name="android.intent.action.VIEW" />
-        <category android:name="android.intent.category.DEFAULT" />
-        <category android:name="android.intent.category.BROWSABLE" />
-
-        <data
-            android:scheme="https"
-            android:host="yourdomain.com"
-            android:pathPrefix="/taskgate" />
-    </intent-filter>
-
-    <!-- Custom URL Scheme (fallback) -->
-    <intent-filter>
-        <action android:name="android.intent.action.VIEW" />
-        <category android:name="android.intent.category.DEFAULT" />
-        <category android:name="android.intent.category.BROWSABLE" />
-
-        <data android:scheme="yourapp" />
-    </intent-filter>
-</activity>
-```
-
-### 4. Report Task Completion
-
-When the user completes (or cancels) the task:
-
-```kotlin
-// User completed task and wants to open the blocked app
-TaskGateSDK.reportCompletion(TaskGateSDK.CompletionStatus.OPEN)
-
-// User completed task but wants to stay focused
-TaskGateSDK.reportCompletion(TaskGateSDK.CompletionStatus.FOCUS)
-
-// User cancelled the task
-TaskGateSDK.cancelTask()
-```
+Copy `TaskGateSDK.kt` and `TaskGateTrampolineActivity.kt` to your project under `com.taskgate.sdk` package.
 
 ---
 
@@ -349,11 +321,11 @@ class BreathingTaskActivity : AppCompatActivity(), TaskGateSDK.TaskGateListener 
 
 ### Task Lifecycle
 
-| Method                     | Description                                                                              |
-| -------------------------- | ---------------------------------------------------------------------------------------- |
-| `notifyReady()`            | **Triggers delivery** of stored task via `onTaskReceived()` + signals TaskGate app ready |
-| `reportCompletion(status)` | Report task outcome                                                                      |
-| `cancelTask()`             | Shorthand for `reportCompletion(CANCELLED)`                                              |
+| Method                     | Description                                                                                |
+| -------------------------- | ------------------------------------------------------------------------------------------ |
+| `notifyReady()`            | **Triggers delivery** of stored task via `onTaskReceived()`. TaskGate stays in background. |
+| `reportCompletion(status)` | Report task outcome and bring TaskGate back to handle result                               |
+| `cancelTask()`             | Shorthand for `reportCompletion(CANCELLED)`                                                |
 
 ### Completion Status
 
