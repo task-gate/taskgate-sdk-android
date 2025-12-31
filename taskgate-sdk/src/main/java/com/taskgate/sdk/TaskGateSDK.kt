@@ -12,42 +12,35 @@ import android.util.Log
  * - Receive task requests from TaskGate via deep links
  * - Report task completion status
  * 
- * ## Quick Setup
+ * ## Usage
  * 
  * 1. Initialize in Application.onCreate():
  * ```kotlin
  * TaskGateSDK.initialize(this, "your_provider_id")
  * ```
  * 
- * 2. Add deep link handling to your MainActivity's intent-filter:
- * ```xml
- * <intent-filter android:autoVerify="true">
- *     <action android:name="android.intent.action.VIEW" />
- *     <category android:name="android.intent.category.DEFAULT" />
- *     <category android:name="android.intent.category.BROWSABLE" />
- *     <data android:scheme="https" android:host="yourdomain.com" android:pathPrefix="/taskgate" />
- * </intent-filter>
- * ```
- * 
- * 3. Handle deep links in MainActivity:
+ * 2. Handle deep links in MainActivity:
  * ```kotlin
- * // In onCreate or via intent handling
- * TaskGateSDK.handleIntent(intent)
+ * override fun onCreate(savedInstanceState: Bundle?) {
+ *     super.onCreate(savedInstanceState)
+ *     TaskGateSDK.handleIntent(intent)  // SDK receives and parses the deep link
+ * }
  * 
- * // Check for pending task (cold start)
- * val taskId = TaskGateSDK.getPendingTaskId()
- * val appName = TaskGateSDK.getPendingAppName()
- * ```
- * 
- * 4. Handle warm starts:
- * ```kotlin
  * override fun onNewIntent(intent: Intent) {
  *     super.onNewIntent(intent)
- *     TaskGateSDK.handleNewIntent(intent)
+ *     TaskGateSDK.handleNewIntent(intent)  // For warm start
  * }
  * ```
  * 
- * 5. Report completion when done:
+ * 3. Check for pending task (optional, SDK auto-notifies Flutter):
+ * ```kotlin
+ * if (TaskGateSDK.hasPendingTask()) {
+ *     val task = TaskGateSDK.getPendingTaskInfo()
+ *     // Navigate to task screen
+ * }
+ * ```
+ * 
+ * 4. Report completion when done:
  * ```kotlin
  * TaskGateSDK.reportCompletion(TaskGateSDK.CompletionStatus.OPEN)
  * ```
@@ -249,41 +242,6 @@ object TaskGateSDK {
         Log.d(TAG, "handleUri() - Task stored. Flutter should check getPendingTaskId() before creating router.")
         
         return true
-    }
-    
-    /**
-     * Get the pending task ID from SharedPreferences.
-     * Call this in Flutter BEFORE creating the router to set the correct initial location.
-     * 
-     * @return The pending task ID, or null if no task is pending
-     */
-    @JvmStatic
-    fun getPendingTaskId(): String? {
-        val context = applicationContext ?: return null
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val taskId = prefs.getString(KEY_PENDING_TASK_ID, null)
-        val timestamp = prefs.getLong(KEY_PENDING_TIMESTAMP, 0)
-        
-        // Ignore stale tasks (older than 30 seconds)
-        val ageMs = System.currentTimeMillis() - timestamp
-        if (taskId != null && ageMs > 30000) {
-            Log.d(TAG, "getPendingTaskId() - Task is stale (${ageMs}ms old), clearing")
-            clearPendingTaskFromPrefs()
-            return null
-        }
-        
-        Log.d(TAG, "getPendingTaskId() - Found: $taskId (${ageMs}ms old)")
-        return taskId
-    }
-    
-    /**
-     * Get the pending app name from SharedPreferences.
-     */
-    @JvmStatic
-    fun getPendingAppName(): String? {
-        val context = applicationContext ?: return null
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getString(KEY_PENDING_APP_NAME, null)
     }
     
     /**
