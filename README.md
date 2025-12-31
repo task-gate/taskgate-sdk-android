@@ -6,8 +6,6 @@ Enable your Android app to provide micro-tasks for TaskGate users.
 
 ## Quick Start
 
-The SDK provides a built-in `TaskGateTrampolineActivity` that handles everything automatically.
-
 ### 1. Initialize the SDK
 
 In your `Application` class:
@@ -16,28 +14,24 @@ In your `Application` class:
 class MyApplication : Application() {
     override fun onCreate() {
         super.onCreate()
-
-        // Pass your main activity class - SDK will launch it automatically
-        TaskGateSDK.initialize(
-            context = this,
-            providerId = "your_provider_id",
-            taskActivityClass = MainActivity::class.java
-        )
+        TaskGateSDK.initialize(this, "your_provider_id")
     }
 }
 ```
 
-### 2. Add SDK Trampoline to Manifest
+### 2. Add Deep Link Intent Filter
+
+Add the intent filter directly on your `MainActivity`:
 
 ```xml
-<!-- SDK's trampoline - handles deep link automatically -->
 <activity
-    android:name="com.taskgate.sdk.TaskGateTrampolineActivity"
+    android:name=".MainActivity"
     android:exported="true"
-    android:theme="@android:style/Theme.Translucent.NoTitleBar"
-    android:noHistory="true"
-    android:excludeFromRecents="true">
+    android:launchMode="singleTask">
 
+    <!-- Your existing intent filters... -->
+
+    <!-- TaskGate deep link -->
     <intent-filter android:autoVerify="true">
         <action android:name="android.intent.action.VIEW" />
         <category android:name="android.intent.category.DEFAULT" />
@@ -50,20 +44,27 @@ class MyApplication : Application() {
 </activity>
 ```
 
-> **Note:** You do NOT need a `taskgate://` scheme. The SDK handles communication with TaskGate internally.
+> **Note:** Use `android:launchMode="singleTask"` to ensure warm starts use `onNewIntent()`.
 
-### 3. Set Up MethodChannel for Flutter
-
-Add a MethodChannel in your MainActivity. The SDK will **automatically** send `onTaskReceived` events to Flutter for warm starts:
+### 3. Handle Deep Links in MainActivity
 
 ```kotlin
 class MainActivity : FlutterActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // Handle cold start deep link
+        TaskGateSDK.handleIntent(intent)
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
-        val methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.yourapp/taskgate")
+        val methodChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.yourapp/taskgate"
+        )
 
-        // Register channel with SDK - it will automatically send onTaskReceived for warm starts
+        // Register channel with SDK for warm start notifications
         TaskGateSDK.setFlutterChannel(object : TaskGateSDK.FlutterChannel {
             override fun invokeMethod(method: String, arguments: Map<String, Any?>) {
                 methodChannel.invokeMethod(method, arguments)
@@ -82,10 +83,6 @@ class MainActivity : FlutterActivity() {
                         result.success(null)
                     }
                 }
-                "signalAppReady" -> {
-                    TaskGateSDK.signalAppReady()
-                    result.success(null)
-                }
                 "reportCompletion" -> {
                     val status = when (call.argument<String>("status")) {
                         "open" -> TaskGateSDK.CompletionStatus.OPEN
@@ -102,14 +99,15 @@ class MainActivity : FlutterActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        TaskGateSDK.handleNewIntent(intent) // SDK automatically sends onTaskReceived to Flutter
+        // Handle warm start - SDK automatically notifies Flutter
+        TaskGateSDK.handleNewIntent(intent)
     }
 }
 ```
 
 ### 4. Handle TaskGate Tasks in Flutter
 
-In Flutter, you need to handle **both cold starts and warm starts**:
+Handle **both cold starts and warm starts**:
 
 ```dart
 const _channel = MethodChannel('com.yourapp/taskgate');
@@ -163,47 +161,37 @@ class _MyAppState extends State<MyApp> {
       initialRoute: widget.initialTask != null ? '/task' : '/',
       routes: {
         '/': (_) => HomeScreen(),
-        '/task': (context) => TaskScreen(
-          taskInfo: widget.initialTask ??
-            ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?,
-        ),
+        '/task': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          final taskInfo = widget.initialTask ??
+            (args is Map<String, dynamic> ? args : null);
+          return TaskScreen(taskInfo: taskInfo);
+        },
       },
     );
   }
 }
 ```
 
-In your task screen, call `signalAppReady()` when the UI is visible:
+### 5. Report Completion
+
+When the user completes the task:
 
 ```dart
-class TaskScreen extends StatefulWidget {
+class TaskScreen extends StatelessWidget {
   final Map<String, dynamic>? taskInfo;
   const TaskScreen({super.key, this.taskInfo});
 
-  @override
-  State<TaskScreen> createState() => _TaskScreenState();
-}
-
-class _TaskScreenState extends State<TaskScreen> {
   static const _channel = MethodChannel('com.yourapp/taskgate');
 
-  @override
-  void initState() {
-    super.initState();
-    // Signal that task screen is visible
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _channel.invokeMethod('signalAppReady');
-    });
-  }
-
-  Future<void> _onComplete(String status) async {
+  Future<void> _onComplete(BuildContext context, String status) async {
     await _channel.invokeMethod('reportCompletion', {'status': status});
-    if (mounted) Navigator.of(context).pop();
+    if (context.mounted) Navigator.of(context).pop();
   }
 
   @override
   Widget build(BuildContext context) {
-    final appName = widget.taskInfo?['appName'] ?? 'the app';
+    final appName = taskInfo?['appName'] ?? 'the app';
     return Scaffold(
       appBar: AppBar(title: Text('Complete Task')),
       body: Center(
@@ -213,11 +201,11 @@ class _TaskScreenState extends State<TaskScreen> {
             Text('Complete this task to open $appName'),
             SizedBox(height: 32),
             ElevatedButton(
-              onPressed: () => _onComplete('open'),
+              onPressed: () => _onComplete(context, 'open'),
               child: Text('Complete & Open App'),
             ),
             TextButton(
-              onPressed: () => _onComplete('focus'),
+              onPressed: () => _onComplete(context, 'focus'),
               child: Text('Stay Focused'),
             ),
           ],
@@ -228,55 +216,6 @@ class _TaskScreenState extends State<TaskScreen> {
 }
 ```
 
-### 5. For Native Apps
-
-For native apps, call `signalAppReady()` when your task UI is visible:
-
-```kotlin
-class TaskActivity : AppCompatActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_task)
-
-        // Get task info
-        val taskId = intent.getStringExtra("taskgate_task_id")
-        val appName = intent.getStringExtra("taskgate_app_name")
-
-        // Set up your UI...
-
-        // Signal when UI is ready
-        TaskGateSDK.signalAppReady()
-    }
-}
-```
-
-### 6. Report Completion
-
-```kotlin
-// User completed task and wants to open the blocked app
-TaskGateSDK.reportCompletion(TaskGateSDK.CompletionStatus.OPEN)
-
-// User wants to stay focused
-TaskGateSDK.reportCompletion(TaskGateSDK.CompletionStatus.FOCUS)
-
-// User cancelled
-TaskGateSDK.cancelTask()
-```
-
----
-
-## What the SDK Handles
-
-| Component                      | You Handle                 | SDK Handles  |
-| ------------------------------ | -------------------------- | ------------ |
-| **Trampoline activity**        | ❌ Not needed              | ✅ Provided  |
-| **Deep link parsing**          | -                          | ✅ Automatic |
-| **Keep TaskGate visible**      | -                          | ✅ Automatic |
-| **Launch your activity**       | -                          | ✅ Automatic |
-| **Signal TaskGate when ready** | ✅ Call `signalAppReady()` | -            |
-| **Show task UI**               | ✅ Your design             | -            |
-| **Report completion**          | ✅ Call SDK method         | -            |
-
 ---
 
 ## How It Works
@@ -286,70 +225,170 @@ TaskGateSDK.cancelTask()
 │                     TIMELINE OF EVENTS                           │
 ├──────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  1. TaskGate shows redirect screen                               │
+│  1. User tries to open blocked app                               │
 │                                                                  │
-│  2. TaskGate launches deep link                                  │
-│     └── TaskGateTrampolineActivity starts (invisible)            │
-│     └── Stores task info                                         │
-│     └── Launches your MainActivity                               │
-│     └── Trampoline WAITS (TaskGate redirect still visible!)      │
+│  2. TaskGate shows redirect screen (its own splash UI)           │
 │                                                                  │
-│  3. Your app initializes (Flutter/Native)                        │
-│     └── TaskGate redirect screen still visible                   │
+│  3. TaskGate launches your app's deep link                       │
+│     └── TaskGate immediately moves to background                 │
 │                                                                  │
-│  4. You call signalAppReady()                                    │
-│     └── Tells TaskGate to dismiss redirect screen                │
-│     └── Trampoline finishes                                      │
-│     └── Your app is now visible with task screen                 │
+│  4. Your app starts (shows Android native splash screen)         │
+│     └── SDK stores task info in SharedPreferences                │
+│     └── Flutter initializes                                      │
+│     └── Flutter checks getPendingTask() before creating router   │
+│     └── Router starts at task screen                             │
 │                                                                  │
-│  5. User completes task                                          │
+│  5. User sees your task screen                                   │
+│                                                                  │
+│  6. User completes task                                          │
 │     └── reportCompletion() → TaskGate handles result             │
 │                                                                  │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-**Why this pattern:**
+**Key points:**
 
-- ✅ TaskGate's redirect screen stays visible during cold boot
-- ✅ User sees smooth transition (redirect → your task screen)
-- ✅ No black screen or "home screen flash"
-- ✅ Your app (Flutter) can fully initialize before revealing UI
-- ✅ Default 3-second timeout if `signalAppReady()` is not called
+- ✅ TaskGate immediately moves to background after launching your app
+- ✅ Your app's native splash screen is visible during Flutter boot
+- ✅ Check `getPendingTask()` BEFORE creating Flutter router
+- ✅ For warm starts, SDK sends `onTaskReceived` to Flutter automatically
 
 ---
 
-## Handling Warm Starts
+## What the SDK Handles
 
-When your app is already running and receives a TaskGate intent, use `handleNewIntent()`:
+| Component              | You Handle         | SDK Handles  |
+| ---------------------- | ------------------ | ------------ |
+| **Deep link parsing**  | -                  | ✅ Automatic |
+| **Store task info**    | -                  | ✅ Automatic |
+| **Warm start events**  | -                  | ✅ Automatic |
+| **Native splash**      | ✅ Your design     | -            |
+| **Show task UI**       | ✅ Your design     | -            |
+| **Report completion**  | ✅ Call SDK method | -            |
+
+---
+
+## Native App Integration
+
+For native apps (no Flutter):
 
 ```kotlin
-class MainActivity : FlutterActivity() {
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
+class MainActivity : AppCompatActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
 
-        // SDK handles warm start automatically
-        if (TaskGateSDK.handleNewIntent(intent)) {
-            return // TaskGate handled it
+        // Handle deep link
+        TaskGateSDK.handleIntent(intent)
+
+        // Check for pending task
+        val taskId = TaskGateSDK.getPendingTaskId()
+        val appName = TaskGateSDK.getPendingAppName()
+
+        if (taskId != null) {
+            // Show task UI
+            showTaskScreen(taskId, appName)
+        } else {
+            // Normal app flow
+            setContentView(R.layout.activity_main)
         }
-        // Handle other intents...
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        if (TaskGateSDK.handleNewIntent(intent)) {
+            // Task received during warm start
+            val taskId = TaskGateSDK.getPendingTaskId()
+            val appName = TaskGateSDK.getPendingAppName()
+            showTaskScreen(taskId, appName)
+        }
+    }
+
+    private fun showTaskScreen(taskId: String?, appName: String?) {
+        // Your task UI implementation
+    }
+
+    fun onTaskComplete(status: TaskGateSDK.CompletionStatus) {
+        TaskGateSDK.reportCompletion(status)
+        // Clear task and return to normal flow
     }
 }
 ```
 
 ---
 
-## Getting Task Info
+## API Reference
 
-Read task info from intent extras or SharedPreferences:
+### Initialization
 
-```kotlin
-// From intent extras (set by SDK)
-val taskId = intent.getStringExtra("taskgate_task_id")
-val appName = intent.getStringExtra("taskgate_app_name")
+| Method                           | Description                                         |
+| -------------------------------- | --------------------------------------------------- |
+| `initialize(context, providerId)` | Initialize SDK with your provider ID               |
+| `setFlutterChannel(channel)`     | Register Flutter MethodChannel for warm start events |
 
-// Or from SDK (useful in Flutter before router is created)
-val taskId = TaskGateSDK.getPendingTaskId()
-val appName = TaskGateSDK.getPendingAppName()
+### Handling Intents
+
+| Method                    | Description                                                         |
+| ------------------------- | ------------------------------------------------------------------- |
+| `handleIntent(intent)`    | Handle cold start deep link. Call in onCreate().                    |
+| `handleNewIntent(intent)` | Handle warm start. Call in onNewIntent(). Returns true if handled.  |
+| `handleUri(uri)`          | Manually parse a TaskGate URI                                       |
+
+### Getting Task Info
+
+| Method                | Description                                           |
+| --------------------- | ----------------------------------------------------- |
+| `getPendingTaskId()`  | Get pending task ID (null if none or expired)         |
+| `getPendingAppName()` | Get pending blocked app name                          |
+| `hasPendingTask()`    | Check if there's a pending task in memory             |
+| `clearPendingTask()`  | Clear pending task info after handling                |
+
+> **Note:** Task info expires after 30 seconds to prevent stale tasks.
+
+### Reporting Completion
+
+| Method                     | Description                                 |
+| -------------------------- | ------------------------------------------- |
+| `reportCompletion(status)` | Report task outcome and return to TaskGate  |
+| `cancelTask()`             | Shorthand for `reportCompletion(CANCELLED)` |
+
+### Completion Status
+
+| Status      | User Action                                           |
+| ----------- | ----------------------------------------------------- |
+| `OPEN`      | Completed task, wants to open the blocked app         |
+| `FOCUS`     | Completed task, wants to stay focused (no app launch) |
+| `CANCELLED` | Skipped or cancelled the task                         |
+
+### Session Info
+
+| Method                  | Description                             |
+| ----------------------- | --------------------------------------- |
+| `hasActiveSession()`    | Check if there's an active task session |
+| `getCurrentTaskId()`    | Get the current task ID                 |
+| `getCurrentSessionId()` | Get the current session ID              |
+
+---
+
+## URL Format
+
+TaskGate will launch your app with URLs like:
+
+```
+https://yourdomain.com/taskgate/start
+    ?task_id=breathing_30s
+    &callback_url=https://taskgate-app-links.onrender.com/task/completed
+    &session_id=abc12345
+    &app_name=Instagram
+```
+
+Your SDK calls back to TaskGate with:
+
+```
+https://taskgate-app-links.onrender.com/task/completed
+    ?status=open
+    &provider_id=your_provider
+    &session_id=abc12345
+    &task_id=breathing_30s
 ```
 
 ---
@@ -378,350 +417,7 @@ dependencies {
 
 ### Manual Installation
 
-Copy `TaskGateSDK.kt` and `TaskGateTrampolineActivity.kt` to your project under `com.taskgate.sdk` package.
-
----
-
-## Complete Example (Flutter App)
-
-**MyApplication.kt:**
-
-```kotlin
-class MyApplication : Application() {
-    override fun onCreate() {
-        super.onCreate()
-        TaskGateSDK.initialize(this, "breathing_app", MainActivity::class.java)
-    }
-}
-```
-
-**MainActivity.kt:**
-
-```kotlin
-class MainActivity : FlutterActivity() {
-    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-        super.configureFlutterEngine(flutterEngine)
-
-        val methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.yourapp/taskgate")
-
-        // Register channel with SDK - it will automatically send onTaskReceived for warm starts
-        TaskGateSDK.setFlutterChannel(object : TaskGateSDK.FlutterChannel {
-            override fun invokeMethod(method: String, arguments: Map<String, Any?>) {
-                methodChannel.invokeMethod(method, arguments)
-            }
-        })
-
-        // Handle calls FROM Flutter
-        methodChannel.setMethodCallHandler { call, result ->
-            when (call.method) {
-                "getPendingTask" -> {
-                    val taskId = TaskGateSDK.getPendingTaskId()
-                    val appName = TaskGateSDK.getPendingAppName()
-                    if (taskId != null) {
-                        result.success(mapOf(
-                            "taskId" to taskId,
-                            "appName" to appName
-                        ))
-                    } else {
-                        result.success(null)
-                    }
-                }
-                "signalAppReady" -> {
-                    TaskGateSDK.signalAppReady()
-                    result.success(null)
-                }
-                "reportCompletion" -> {
-                    val status = when (call.argument<String>("status")) {
-                        "open" -> TaskGateSDK.CompletionStatus.OPEN
-                        "focus" -> TaskGateSDK.CompletionStatus.FOCUS
-                        else -> TaskGateSDK.CompletionStatus.CANCELLED
-                    }
-                    TaskGateSDK.reportCompletion(status)
-                    result.success(null)
-                }
-                else -> result.notImplemented()
-            }
-        }
-    }
-
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        TaskGateSDK.handleNewIntent(intent) // SDK automatically sends onTaskReceived to Flutter
-    }
-}
-```
-
-**main.dart:**
-
-```dart
-const _channel = MethodChannel('com.yourapp/taskgate');
-
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  // COLD START: Check for pending TaskGate task FIRST
-  Map<String, dynamic>? taskInfo;
-  try {
-    final result = await _channel.invokeMethod('getPendingTask');
-    if (result != null) {
-      taskInfo = Map<String, dynamic>.from(result);
-    }
-  } catch (_) {}
-
-  runApp(MyApp(initialTask: taskInfo));
-}
-
-class MyApp extends StatefulWidget {
-  final Map<String, dynamic>? initialTask;
-  const MyApp({super.key, this.initialTask});
-
-  @override
-  State<MyApp> createState() => _MyAppState();
-}
-
-class _MyAppState extends State<MyApp> {
-  static const _channel = MethodChannel('com.yourapp/taskgate');
-  final _navigatorKey = GlobalKey<NavigatorState>();
-
-  @override
-  void initState() {
-    super.initState();
-
-    // WARM START: Listen for incoming tasks when app is already running
-    _channel.setMethodCallHandler((call) async {
-      if (call.method == 'onTaskReceived') {
-        final taskInfo = Map<String, dynamic>.from(call.arguments);
-        // Navigate to task screen
-        _navigatorKey.currentState?.pushNamed('/task', arguments: taskInfo);
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      navigatorKey: _navigatorKey,
-      // Route to task screen if there's a pending task (cold start)
-      initialRoute: widget.initialTask != null ? '/task' : '/',
-      routes: {
-        '/': (_) => HomeScreen(),
-        '/task': (context) {
-          // Get task info from either cold start or warm start navigation
-          final args = ModalRoute.of(context)?.settings.arguments;
-          final taskInfo = widget.initialTask ??
-            (args is Map<String, dynamic> ? args : null);
-          return TaskScreen(taskInfo: taskInfo);
-        },
-      },
-    );
-  }
-}
-```
-
-**task_screen.dart:**
-
-```dart
-class TaskScreen extends StatefulWidget {
-  final Map<String, dynamic>? taskInfo;
-  const TaskScreen({super.key, this.taskInfo});
-
-  @override
-  State<TaskScreen> createState() => _TaskScreenState();
-}
-
-class _TaskScreenState extends State<TaskScreen> {
-  static const _channel = MethodChannel('com.yourapp/taskgate');
-
-  @override
-  void initState() {
-    super.initState();
-    // Signal that task screen is visible
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _channel.invokeMethod('signalAppReady');
-    });
-  }
-
-  Future<void> _onComplete(String status) async {
-    await _channel.invokeMethod('reportCompletion', {'status': status});
-    if (mounted) Navigator.of(context).pop();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final appName = widget.taskInfo?['appName'] ?? 'the app';
-    return Scaffold(
-      appBar: AppBar(title: Text('Complete Task')),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text('Complete this task to open $appName'),
-            SizedBox(height: 32),
-            ElevatedButton(
-              onPressed: () => _onComplete('open'),
-              child: Text('Complete & Open App'),
-            ),
-            TextButton(
-              onPressed: () => _onComplete('focus'),
-              child: Text('Stay Focused'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-```
-
-## Complete Example (Native App)
-
-```kotlin
-class TaskActivity : AppCompatActivity() {
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_task)
-
-        // Get task info from intent
-        val taskId = intent.getStringExtra("taskgate_task_id")
-        val appName = intent.getStringExtra("taskgate_app_name")
-
-        // Or from SharedPreferences
-        // val taskId = TaskGateSDK.getPendingTaskId()
-        // val appName = TaskGateSDK.getPendingAppName()
-
-        // Show blocked app name
-        findViewById<TextView>(R.id.tvBlockedApp).text =
-            "Complete this task to open ${appName ?: "the app"}"
-
-        // Setup UI
-        findViewById<Button>(R.id.btnComplete).setOnClickListener {
-            TaskGateSDK.reportCompletion(TaskGateSDK.CompletionStatus.OPEN)
-            finish()
-        }
-
-        findViewById<Button>(R.id.btnStayFocused).setOnClickListener {
-            TaskGateSDK.reportCompletion(TaskGateSDK.CompletionStatus.FOCUS)
-            finish()
-        }
-
-        // UI is ready - signal SDK
-        TaskGateSDK.signalAppReady()
-    }
-
-    override fun onNewIntent(intent: Intent?) {
-        super.onNewIntent(intent)
-        TaskGateSDK.handleNewIntent(intent)
-    }
-
-    override fun onBackPressed() {
-        TaskGateSDK.cancelTask()
-        super.onBackPressed()
-    }
-}
-```
-
----
-
-## API Reference
-
-### Initialization
-
-| Method                                               | Description                                                           |
-| ---------------------------------------------------- | --------------------------------------------------------------------- |
-| `initialize(context, providerId, taskActivityClass)` | Initialize SDK with your provider ID and activity to launch           |
-| `setWaitTimeout(timeoutMs)`                          | Set timeout for waiting for signalAppReady() (default: 3000ms)        |
-| `setFlutterChannel(channel)`                         | Register Flutter MethodChannel for automatic warm start notifications |
-
-### App Ready Signal
-
-| Method             | Description                                                                                    |
-| ------------------ | ---------------------------------------------------------------------------------------------- |
-| `signalAppReady()` | **Call when your app is ready.** Dismisses TaskGate's redirect screen and finishes trampoline. |
-
-### Handling Intents
-
-| Method                         | Description                                                         |
-| ------------------------------ | ------------------------------------------------------------------- |
-| `handleNewIntent(intent)`      | Handle warm start - call in onNewIntent(). Returns true if handled. |
-| `isTaskGateIntent(intent)`     | Check if intent is from TaskGate                                    |
-| `isLaunchedByTaskGate(intent)` | Check if activity was launched by TaskGate SDK                      |
-
-### Getting Task Info
-
-| Method                | Description                                         |
-| --------------------- | --------------------------------------------------- |
-| `getPendingTaskId()`  | Get pending task ID from SharedPreferences          |
-| `getPendingAppName()` | Get pending blocked app name from SharedPreferences |
-| `hasPendingTask()`    | Check if there's a pending task                     |
-| `clearPendingTask()`  | Clear pending task info                             |
-
-Or read directly from intent extras:
-
-- `intent.getStringExtra("taskgate_task_id")`
-- `intent.getStringExtra("taskgate_app_name")`
-- `intent.getStringExtra("taskgate_session_id")`
-
-### Reporting Completion
-
-| Method                     | Description                                 |
-| -------------------------- | ------------------------------------------- |
-| `reportCompletion(status)` | Report task outcome and return to TaskGate  |
-| `cancelTask()`             | Shorthand for `reportCompletion(CANCELLED)` |
-
-### Completion Status
-
-| Status      | User Action                                           |
-| ----------- | ----------------------------------------------------- |
-| `OPEN`      | Completed task, wants to open the blocked app         |
-| `FOCUS`     | Completed task, wants to stay focused (no app launch) |
-| `CANCELLED` | Skipped or cancelled the task                         |
-
-### TaskInfo Properties
-
-| Property           | Type    | Description                                    |
-| ------------------ | ------- | ---------------------------------------------- |
-| `taskId`           | String  | Unique task identifier (e.g., "breathing_30s") |
-| `sessionId`        | String  | Session ID for this task attempt               |
-| `callbackUrl`      | String  | URL to call when task completes                |
-| `appName`          | String? | Name of the blocked app (for display)          |
-| `additionalParams` | Map     | Extra parameters from TaskGate                 |
-
-### Utility Methods
-
-| Method                  | Description                             |
-| ----------------------- | --------------------------------------- |
-| `hasActiveSession()`    | Check if there's an active task session |
-| `getCurrentTaskId()`    | Get the current task ID                 |
-| `getCurrentSessionId()` | Get the current session ID              |
-
----
-
-## URL Format
-
-TaskGate will launch your app with URLs like:
-
-```
-https://yourdomain.com/taskgate/start
-    ?task_id=breathing_30s
-    &callback_url=https://taskgate-app-links.onrender.com/task/completed
-    &session_id=abc12345
-    &app_name=Instagram
-```
-
-Your SDK calls back to TaskGate with:
-
-```
-# Ready signal
-taskgate://partner-ready?session_id=abc12345&provider_id=your_provider
-
-# Completion
-https://taskgate-app-links.onrender.com/task/completed
-    ?status=open
-    &provider_id=your_provider
-    &session_id=abc12345
-    &task_id=breathing_30s
-```
+Copy `TaskGateSDK.kt` to your project under `com.taskgate.sdk` package.
 
 ---
 
@@ -741,12 +437,12 @@ If using ProGuard/R8, add these rules:
 ### Deep links not working
 
 1. Verify your `intent-filter` in AndroidManifest.xml
-2. Test with: `adb shell am start -a android.intent.action.VIEW -d "https://yourdomain.com/taskgate/start?task_id=test"`
+2. Test with: `adb shell am start -a android.intent.action.VIEW -d "https://yourdomain.com/taskgate/start?task_id=test&callback_url=https://example.com"`
 3. Check if your domain is verified for App Links
 
 ### App not receiving TaskGate intents
 
-1. Check that your Activity handles `onNewIntent()` for warm starts
+1. Ensure `android:launchMode="singleTask"` on your MainActivity
 2. Make sure `TaskGateSDK.handleNewIntent(intent)` is called in `onNewIntent()`
 
 ### Task not completing
@@ -754,10 +450,11 @@ If using ProGuard/R8, add these rules:
 1. Verify you're calling `reportCompletion()` or `cancelTask()`
 2. Check logcat for `TaskGateSDK` tag for debugging info
 
-### Black screen before app appears
+### Task info is null
 
-1. Make sure `signalAppReady()` is called when your app is ready
-2. The SDK waits 3 seconds by default - customize with `setWaitTimeout()`
+1. Task info expires after 30 seconds - check timing
+2. Make sure `TaskGateSDK.handleIntent(intent)` is called in onCreate()
+3. Call `getPendingTask()` BEFORE creating your Flutter router
 
 ---
 
