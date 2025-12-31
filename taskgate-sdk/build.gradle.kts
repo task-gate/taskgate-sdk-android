@@ -43,7 +43,7 @@ publishing {
         register<MavenPublication>("release") {
             groupId = "com.taskgate"
             artifactId = "sdk"
-            version = "1.0.7"
+            version = "1.0.8"
 
             afterEvaluate {
                 from(components["release"])
