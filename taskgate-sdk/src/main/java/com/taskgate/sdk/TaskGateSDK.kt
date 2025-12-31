@@ -72,6 +72,17 @@ object TaskGateSDK {
     private var pendingTaskInfo: TaskInfo? = null
     private var taskActivityClass: Class<out Activity>? = null
     
+    // Wait for app ready configuration (always enabled by default)
+    private var waitTimeoutMs: Long = 3000L  // 3 second default timeout
+    private var appReadyCallback: AppReadyCallback? = null
+    
+    /**
+     * Callback interface for app ready signal
+     */
+    interface AppReadyCallback {
+        fun onAppReady()
+    }
+    
     /**
      * Task completion status
      */
@@ -131,6 +142,100 @@ object TaskGateSDK {
         if (taskActivityClass != null) {
             Log.d(TAG, "Task activity configured: ${taskActivityClass.simpleName}")
         }
+    }
+    
+    /**
+     * Set the timeout for waiting for app ready signal.
+     * 
+     * By default, the SDK waits 3 seconds for signalAppReady() to be called.
+     * Use this to customize the timeout if needed.
+     * 
+     * @param timeoutMs Maximum time to wait before finishing anyway (default: 3000ms)
+     */
+    @JvmStatic
+    fun setWaitTimeout(timeoutMs: Long) {
+        this.waitTimeoutMs = timeoutMs
+        Log.d(TAG, "Wait timeout set to: ${timeoutMs}ms")
+    }
+    
+    /**
+     * Signal that your app is ready.
+     * 
+     * Call this when your app (e.g., Flutter) has fully initialized and is ready
+     * to show content. This will:
+     * 1. Tell TaskGate to dismiss its redirect screen
+     * 2. Finish the trampoline activity, revealing your app's UI
+     * 
+     * For Flutter apps, call this via MethodChannel after Flutter is initialized:
+     * ```dart
+     * const platform = MethodChannel('com.yourapp/taskgate');
+     * await platform.invokeMethod('signalAppReady');
+     * ```
+     * 
+     * In your MainActivity:
+     * ```kotlin
+     * MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.yourapp/taskgate")
+     *     .setMethodCallHandler { call, result ->
+     *         if (call.method == "signalAppReady") {
+     *             TaskGateSDK.signalAppReady()
+     *             result.success(null)
+     *         }
+     *     }
+     * ```
+     */
+    @JvmStatic
+    fun signalAppReady() {
+        Log.d(TAG, "signalAppReady() called - notifying TaskGate and finishing trampoline")
+        
+        // Tell TaskGate to dismiss its redirect screen
+        notifyTaskGate()
+        
+        // Tell trampoline to finish
+        appReadyCallback?.onAppReady()
+    }
+    
+    /**
+     * Notify TaskGate that partner app is ready.
+     * This tells TaskGate to dismiss its redirect screen.
+     */
+    private fun notifyTaskGate() {
+        val sessionId = currentSessionId ?: run {
+            Log.w(TAG, "No active session - cannot notify TaskGate")
+            return
+        }
+        
+        Log.d(TAG, "Notifying TaskGate to dismiss redirect screen")
+        
+        val uri = Uri.Builder()
+            .scheme(TASKGATE_SCHEME)
+            .authority("partner-ready")
+            .appendQueryParameter("session_id", sessionId)
+            .appendQueryParameter("provider_id", providerId)
+            .build()
+        
+        launchUri(uri)
+    }
+    
+    /**
+     * Get the wait timeout in milliseconds
+     */
+    @JvmStatic
+    internal fun getWaitTimeout(): Long = waitTimeoutMs
+    
+    /**
+     * Set the callback for app ready signal (used internally by TrampolineActivity)
+     */
+    @JvmStatic
+    internal fun setAppReadyCallback(callback: AppReadyCallback?) {
+        this.appReadyCallback = callback
+    }
+    
+    /**
+     * Clear the app ready callback
+     */
+    @JvmStatic
+    internal fun clearAppReadyCallback() {
+        this.appReadyCallback = null
     }
     
     /**
@@ -387,37 +492,6 @@ object TaskGateSDK {
             .remove(KEY_PENDING_TIMESTAMP)
             .apply()
         Log.d(TAG, "Cleared pending task from SharedPreferences")
-    }
-    
-    /**
-     * Signal TaskGate that your app received the deep link.
-     * 
-     * NOTE: If using TaskGateTrampolineActivity, this is called automatically.
-     * 
-     * Call this IMMEDIATELY in your trampoline activity, then finish() the activity.
-     * This keeps TaskGate's redirect screen visible while your app initializes.
-     * After your app is ready, call showTask() to bring your task UI to foreground.
-     */
-    @JvmStatic
-    fun notifyReady() {
-        val sessionId = currentSessionId ?: run {
-            Log.w(TAG, "No active session - cannot notify ready")
-            return
-        }
-        
-        Log.d(TAG, "[STEP 3] notifyReady() called - Signaling TaskGate we received the link")
-        
-        // Signal TaskGate to keep showing redirect screen
-        // Partner's trampoline activity should finish() after this
-        val uri = Uri.Builder()
-            .scheme(TASKGATE_SCHEME)
-            .authority("partner-ready")
-            .appendQueryParameter("session_id", sessionId)
-            .appendQueryParameter("provider_id", providerId)
-            .build()
-        
-        launchUri(uri)
-        Log.d(TAG, "[STEP 3] TaskGate signaled. Now finish() your trampoline activity.")
     }
     
     /**

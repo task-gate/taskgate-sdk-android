@@ -2,6 +2,8 @@ package com.taskgate.sdk
 
 import android.app.Activity
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 
 /**
@@ -12,13 +14,14 @@ import android.util.Log
  * 2. Parses and stores task info
  * 3. Signals TaskGate that the link was received (keeps TaskGate visible)
  * 4. Launches your configured task activity
- * 5. Finishes itself (invisible, no flash)
+ * 5. Waits for app to signal "ready" (or timeout after 3 seconds)
+ * 6. Finishes itself (invisible, no flash)
  * 
  * ## Setup
  * 
  * 1. Configure your task activity in Application.onCreate():
  * ```kotlin
- * TaskGateSDK.initialize(this, "your_provider_id", YourTaskActivity::class.java)
+ * TaskGateSDK.initialize(this, "your_provider_id", MainActivity::class.java)
  * ```
  * 
  * 2. Add this activity to your AndroidManifest.xml:
@@ -38,23 +41,34 @@ import android.util.Log
  * </activity>
  * ```
  * 
- * 3. In your task activity, call showTask() when ready:
+ * 3. Signal when your app is ready (e.g., in Flutter via MethodChannel):
  * ```kotlin
- * override fun onCreate(savedInstanceState: Bundle?) {
- *     super.onCreate(savedInstanceState)
- *     
- *     // Check if launched by TaskGate
- *     if (TaskGateSDK.isLaunchedByTaskGate(intent)) {
- *         // Your initialization...
- *         TaskGateSDK.showTask() // Delivers task info to your listener
- *     }
- * }
+ * // In your MainActivity
+ * TaskGateSDK.signalAppReady()
  * ```
+ * 
+ * This keeps TaskGate's redirect screen visible until your app is ready.
+ * If signalAppReady() is not called within 3 seconds, the trampoline finishes anyway.
  */
 open class TaskGateTrampolineActivity : Activity() {
     
     companion object {
         private const val TAG = "TaskGateTrampoline"
+    }
+    
+    private val handler = Handler(Looper.getMainLooper())
+    private var isWaiting = false
+    
+    private val readyCallback = object : TaskGateSDK.AppReadyCallback {
+        override fun onAppReady() {
+            Log.d(TAG, "[TRAMPOLINE] App signaled ready, finishing trampoline")
+            finishTrampoline()
+        }
+    }
+    
+    private val timeoutRunnable = Runnable {
+        Log.w(TAG, "[TRAMPOLINE] Timeout waiting for app ready, finishing anyway")
+        finishTrampoline()
     }
     
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -68,20 +82,39 @@ open class TaskGateTrampolineActivity : Activity() {
         if (handled) {
             Log.d(TAG, "[TRAMPOLINE] Deep link handled successfully")
             
-            // Step 2: Signal TaskGate that we received the link
-            // This keeps TaskGate's redirect screen visible
-            TaskGateSDK.notifyReady()
-            
-            // Step 3: Launch the partner's task activity
+            // Step 2: Launch the partner's task activity
+            // TaskGate's redirect screen stays visible until signalAppReady() is called
             TaskGateSDK.launchTaskActivity()
             
-            Log.d(TAG, "[TRAMPOLINE] Task activity launched, finishing trampoline")
+            // Step 3: Wait for app to signal ready (with timeout)
+            Log.d(TAG, "[TRAMPOLINE] Waiting for app to signal ready...")
+            isWaiting = true
+            TaskGateSDK.setAppReadyCallback(readyCallback)
+            
+            // Set timeout (default 3 seconds)
+            val timeout = TaskGateSDK.getWaitTimeout()
+            handler.postDelayed(timeoutRunnable, timeout)
         } else {
             Log.w(TAG, "[TRAMPOLINE] Deep link not handled - not a TaskGate request")
+            finish()
         }
-        
-        // Step 4: Finish immediately (this activity is invisible)
-        finish()
+    }
+    
+    private fun finishTrampoline() {
+        if (!isFinishing) {
+            handler.removeCallbacks(timeoutRunnable)
+            TaskGateSDK.clearAppReadyCallback()
+            isWaiting = false
+            finish()
+        }
+    }
+    
+    override fun onDestroy() {
+        super.onDestroy()
+        handler.removeCallbacks(timeoutRunnable)
+        if (isWaiting) {
+            TaskGateSDK.clearAppReadyCallback()
+        }
     }
     
     /**
