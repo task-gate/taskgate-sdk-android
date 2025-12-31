@@ -67,6 +67,12 @@ object TaskGateSDK {
     private const val KEY_PENDING_APP_NAME = "pending_app_name"
     private const val KEY_PENDING_TIMESTAMP = "pending_timestamp"
     
+    // Channel method names
+    const val METHOD_ON_TASK_RECEIVED = "onTaskReceived"
+    const val METHOD_GET_PENDING_TASK = "getPendingTask"
+    const val METHOD_SIGNAL_APP_READY = "signalAppReady"
+    const val METHOD_REPORT_COMPLETION = "reportCompletion"
+    
     private var applicationContext: Context? = null
     private var providerId: String? = null
     private var currentSessionId: String? = null
@@ -78,6 +84,26 @@ object TaskGateSDK {
     // Wait for app ready configuration (always enabled by default)
     private var waitTimeoutMs: Long = 3000L  // 3 second default timeout
     private var appReadyCallback: AppReadyCallback? = null
+    
+    // Flutter channel for sending events
+    private var flutterChannel: FlutterChannel? = null
+    
+    /**
+     * Interface for sending messages to Flutter.
+     * Implement this with your MethodChannel.
+     * 
+     * Example:
+     * ```kotlin
+     * TaskGateSDK.setFlutterChannel(object : TaskGateSDK.FlutterChannel {
+     *     override fun invokeMethod(method: String, arguments: Map<String, Any?>) {
+     *         methodChannel.invokeMethod(method, arguments)
+     *     }
+     * })
+     * ```
+     */
+    interface FlutterChannel {
+        fun invokeMethod(method: String, arguments: Map<String, Any?>)
+    }
     
     /**
      * Callback interface for app ready signal
@@ -148,6 +174,84 @@ object TaskGateSDK {
     fun setWaitTimeout(timeoutMs: Long) {
         this.waitTimeoutMs = timeoutMs
         Log.d(TAG, "Wait timeout set to: ${timeoutMs}ms")
+    }
+    
+    /**
+     * Set the Flutter channel for SDK-to-Flutter communication.
+     * 
+     * The SDK will automatically send events to Flutter:
+     * - "onTaskReceived" when a task arrives during warm start
+     * 
+     * Example:
+     * ```kotlin
+     * class MainActivity : FlutterActivity() {
+     *     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+     *         super.configureFlutterEngine(flutterEngine)
+     *         
+     *         val methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.yourapp/taskgate")
+     *         
+     *         // Register channel with SDK - it will automatically send onTaskReceived
+     *         TaskGateSDK.setFlutterChannel(object : TaskGateSDK.FlutterChannel {
+     *             override fun invokeMethod(method: String, arguments: Map<String, Any?>) {
+     *                 methodChannel.invokeMethod(method, arguments)
+     *             }
+     *         })
+     *         
+     *         // Handle calls FROM Flutter
+     *         methodChannel.setMethodCallHandler { call, result ->
+     *             when (call.method) {
+     *                 "getPendingTask" -> {
+     *                     val taskId = TaskGateSDK.getPendingTaskId()
+     *                     val appName = TaskGateSDK.getPendingAppName()
+     *                     if (taskId != null) {
+     *                         result.success(mapOf("taskId" to taskId, "appName" to appName))
+     *                     } else {
+     *                         result.success(null)
+     *                     }
+     *                 }
+     *                 "signalAppReady" -> {
+     *                     TaskGateSDK.signalAppReady()
+     *                     result.success(null)
+     *                 }
+     *                 "reportCompletion" -> {
+     *                     val status = when (call.argument<String>("status")) {
+     *                         "open" -> TaskGateSDK.CompletionStatus.OPEN
+     *                         "focus" -> TaskGateSDK.CompletionStatus.FOCUS
+     *                         else -> TaskGateSDK.CompletionStatus.CANCELLED
+     *                     }
+     *                     TaskGateSDK.reportCompletion(status)
+     *                     result.success(null)
+     *                 }
+     *                 else -> result.notImplemented()
+     *             }
+     *         }
+     *     }
+     * }
+     * ```
+     * 
+     * @param channel The channel to use for sending events to Flutter
+     */
+    @JvmStatic
+    fun setFlutterChannel(channel: FlutterChannel?) {
+        this.flutterChannel = channel
+        Log.d(TAG, "Flutter channel ${if (channel != null) "set" else "cleared"}")
+    }
+    
+    /**
+     * Notify Flutter of a task received event.
+     * Called internally when a task arrives during warm start.
+     */
+    private fun notifyFlutterTaskReceived(taskInfo: TaskInfo) {
+        flutterChannel?.let { channel ->
+            Log.d(TAG, "Sending onTaskReceived to Flutter: taskId=${taskInfo.taskId}")
+            channel.invokeMethod(METHOD_ON_TASK_RECEIVED, mapOf(
+                "taskId" to taskInfo.taskId,
+                "appName" to taskInfo.appName,
+                "sessionId" to taskInfo.sessionId
+            ))
+        } ?: run {
+            Log.w(TAG, "Flutter channel not set - cannot notify Flutter of task received")
+        }
     }
     
     /**
@@ -301,11 +405,18 @@ object TaskGateSDK {
         if (intent.getBooleanExtra(EXTRA_FROM_TASKGATE, false)) {
             Log.d(TAG, "handleNewIntent() - FROM_TASKGATE detected (warm start)")
             
-            // Task info available via getPendingTaskId() / intent extras
-            return true
+            // Extract task info from intent extras
+            val taskId = intent.getStringExtra("taskgate_task_id")
+            val appName = intent.getStringExtra("taskgate_app_name")
+            val sessionId = intent.getStringExtra("taskgate_session_id")
             
-            // Task info is in intent extras - partner can read directly
-            Log.d(TAG, "handleNewIntent() - Task info available in intent extras")
+            Log.d(TAG, "handleNewIntent() - Task info: taskId=$taskId, appName=$appName")
+            
+            // Notify Flutter of the incoming task (warm start)
+            pendingTaskInfo?.let { taskInfo ->
+                notifyFlutterTaskReceived(taskInfo)
+            }
+            
             return true
         }
         
@@ -313,6 +424,10 @@ object TaskGateSDK {
         val uri = intent.data
         if (uri != null && handleUri(uri)) {
             Log.d(TAG, "handleNewIntent() - Deep link handled")
+            // Also notify Flutter for direct deep links
+            pendingTaskInfo?.let { taskInfo ->
+                notifyFlutterTaskReceived(taskInfo)
+            }
             return true
         }
         
