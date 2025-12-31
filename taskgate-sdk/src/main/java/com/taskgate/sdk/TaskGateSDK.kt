@@ -286,8 +286,17 @@ object TaskGateSDK {
         // Tell TaskGate to dismiss its redirect screen
         notifyTaskGate()
         
-        // Tell trampoline to finish
-        appReadyCallback?.onAppReady()
+        // Tell trampoline to finish (try both methods for reliability)
+        val callbackResult = appReadyCallback?.let { 
+            it.onAppReady()
+            true 
+        } ?: false
+        
+        if (!callbackResult) {
+            Log.d(TAG, "Callback was null, using static instance to finish trampoline")
+            // Fallback: use static reference to finish trampoline directly
+            TaskGateTrampolineActivity.finishActiveTrampoline()
+        }
     }
     
     /**

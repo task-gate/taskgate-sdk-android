@@ -54,6 +54,24 @@ open class TaskGateTrampolineActivity : Activity() {
     
     companion object {
         private const val TAG = "TaskGateTrampoline"
+        
+        // Static reference to the active trampoline instance
+        // This allows signalAppReady() to finish it directly
+        @Volatile
+        private var activeInstance: TaskGateTrampolineActivity? = null
+        
+        /**
+         * Finish the active trampoline instance (if any).
+         * Called by TaskGateSDK.signalAppReady()
+         */
+        internal fun finishActiveTrampoline() {
+            activeInstance?.let { instance ->
+                Log.d(TAG, "[TRAMPOLINE] Finishing active trampoline instance")
+                instance.finishTrampoline()
+            } ?: run {
+                Log.d(TAG, "[TRAMPOLINE] No active trampoline instance to finish")
+            }
+        }
     }
     
     private val handler = Handler(Looper.getMainLooper())
@@ -75,6 +93,9 @@ open class TaskGateTrampolineActivity : Activity() {
         super.onCreate(savedInstanceState)
         
         Log.d(TAG, "[TRAMPOLINE] onCreate - Processing deep link")
+        
+        // Register this instance as the active trampoline
+        activeInstance = this
         
         // Step 1: Parse the deep link
         val handled = TaskGateSDK.handleIntent(intent)
@@ -102,8 +123,10 @@ open class TaskGateTrampolineActivity : Activity() {
     
     private fun finishTrampoline() {
         if (!isFinishing) {
+            Log.d(TAG, "[TRAMPOLINE] finishTrampoline() called")
             handler.removeCallbacks(timeoutRunnable)
             TaskGateSDK.clearAppReadyCallback()
+            activeInstance = null
             isWaiting = false
             finish()
         }
@@ -111,9 +134,14 @@ open class TaskGateTrampolineActivity : Activity() {
     
     override fun onDestroy() {
         super.onDestroy()
+        Log.d(TAG, "[TRAMPOLINE] onDestroy")
         handler.removeCallbacks(timeoutRunnable)
         if (isWaiting) {
             TaskGateSDK.clearAppReadyCallback()
+        }
+        // Clear static reference if this is the active instance
+        if (activeInstance == this) {
+            activeInstance = null
         }
     }
     
