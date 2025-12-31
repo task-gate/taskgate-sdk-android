@@ -8,11 +8,48 @@ import android.util.Log
 /**
  * TaskGate Partner SDK
  * 
- * Usage:
- * 1. TaskGateSDK.initialize(context, "provider_id") - in Application
- * 2. TaskGateSDK.handleIntent(intent) - in MainActivity onCreate/onNewIntent
- * 3. TaskGateSDK.getPendingTask() - returns TaskInfo if TaskGate launch, null if normal
- * 4. TaskGateSDK.reportCompletion(status) - when done
+ * ## Usage
+ * 
+ * ### 1. Initialize (Application.kt)
+ * ```kotlin
+ * TaskGateSDK.initialize(this, "provider_id")
+ * ```
+ * 
+ * ### 2. Handle Intents (MainActivity.kt)
+ * ```kotlin
+ * override fun onCreate(savedInstanceState: Bundle?) {
+ *     super.onCreate(savedInstanceState)
+ *     TaskGateSDK.handleIntent(intent)
+ * }
+ * 
+ * override fun onNewIntent(intent: Intent) {
+ *     super.onNewIntent(intent)
+ *     TaskGateSDK.handleIntent(intent)
+ * }
+ * ```
+ * 
+ * ### 3. Set Callback for Warm Start (Flutter apps)
+ * ```kotlin
+ * // In configureFlutterEngine:
+ * TaskGateSDK.setTaskCallback { task ->
+ *     // Notify Flutter via MethodChannel
+ *     channel.invokeMethod("onTaskReceived", mapOf(
+ *         "taskId" to task.taskId,
+ *         "appName" to task.appName
+ *     ))
+ * }
+ * ```
+ * 
+ * ### 4. Check for Task on Cold Start (Flutter)
+ * ```dart
+ * final task = await channel.invokeMethod('getPendingTask');
+ * if (task != null) { /* navigate to task */ }
+ * ```
+ * 
+ * ### 5. Report Completion
+ * ```kotlin
+ * TaskGateSDK.reportCompletion(TaskGateSDK.CompletionStatus.OPEN)
+ * ```
  */
 object TaskGateSDK {
     private const val TAG = "TaskGateSDK"
@@ -20,6 +57,7 @@ object TaskGateSDK {
     private var context: Context? = null
     private var providerId: String? = null
     private var pendingTask: TaskInfo? = null
+    private var taskCallback: ((TaskInfo) -> Unit)? = null
     
     data class TaskInfo(
         val taskId: String,
@@ -38,8 +76,27 @@ object TaskGateSDK {
     fun initialize(context: Context, providerId: String) {
         this.context = context.applicationContext
         this.providerId = providerId
+        Log.d(TAG, "Initialized for provider: $providerId")
     }
     
+    /**
+     * Set callback for warm start task notifications.
+     * Called when a task arrives while app is already running.
+     * 
+     * For Flutter apps, use this to notify Flutter via MethodChannel.
+     */
+    @JvmStatic
+    fun setTaskCallback(callback: ((TaskInfo) -> Unit)?) {
+        this.taskCallback = callback
+        Log.d(TAG, "Task callback ${if (callback != null) "set" else "cleared"}")
+    }
+    
+    /**
+     * Handle intent from onCreate() or onNewIntent().
+     * Returns true if this was a TaskGate deep link.
+     * 
+     * On warm start (onNewIntent), automatically calls the task callback if set.
+     */
     @JvmStatic
     fun handleIntent(intent: Intent?): Boolean {
         val uri = intent?.data ?: return false
@@ -48,13 +105,19 @@ object TaskGateSDK {
         val taskId = uri.getQueryParameter("task_id") ?: return false
         val callbackUrl = uri.getQueryParameter("callback_url") ?: return false
         
-        pendingTask = TaskInfo(
+        val task = TaskInfo(
             taskId = taskId,
             appName = uri.getQueryParameter("app_name"),
             sessionId = uri.getQueryParameter("session_id") ?: java.util.UUID.randomUUID().toString().take(8),
             callbackUrl = callbackUrl
         )
+        
+        pendingTask = task
         Log.d(TAG, "Task received: $taskId")
+        
+        // Notify callback (for warm start)
+        taskCallback?.invoke(task)
+        
         return true
     }
     

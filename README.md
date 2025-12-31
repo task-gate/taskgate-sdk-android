@@ -4,7 +4,7 @@ Enable your Android app to provide micro-tasks for TaskGate users.
 
 ---
 
-## Quick Start
+## Quick Start (Native Android)
 
 ### 1. Initialize the SDK
 
@@ -70,19 +70,90 @@ class MainActivity : AppCompatActivity() {
 ### 4. Report Completion
 
 ```kotlin
-// When user completes task
-fun onTaskComplete() {
-    TaskGateSDK.reportCompletion(TaskGateSDK.CompletionStatus.OPEN)
-}
+TaskGateSDK.reportCompletion(TaskGateSDK.CompletionStatus.OPEN)       // User wants to open blocked app
+TaskGateSDK.reportCompletion(TaskGateSDK.CompletionStatus.FOCUS)      // User wants to stay focused
+TaskGateSDK.reportCompletion(TaskGateSDK.CompletionStatus.CANCELLED)  // User cancelled the task
+```
 
-// When user wants to stay focused
-fun onStayFocused() {
-    TaskGateSDK.reportCompletion(TaskGateSDK.CompletionStatus.FOCUS)
-}
+---
 
-// When user cancels
-fun onCancel() {
-    TaskGateSDK.reportCompletion(TaskGateSDK.CompletionStatus.CANCELLED)
+## Flutter Integration
+
+For Flutter apps, use `setTaskCallback()` to receive warm start notifications:
+
+```kotlin
+// MainActivity.kt
+class MainActivity : FlutterActivity() {
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+
+        val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "taskgate")
+
+        // Callback for warm start (app already running)
+        TaskGateSDK.setTaskCallback { task ->
+            channel.invokeMethod("onTaskReceived", mapOf(
+                "taskId" to task.taskId,
+                "appName" to task.appName
+            ))
+        }
+
+        // Methods for Flutter to call
+        channel.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "getPendingTask" -> {
+                    val task = TaskGateSDK.getPendingTask()
+                    result.success(task?.let {
+                        mapOf("taskId" to it.taskId, "appName" to it.appName)
+                    })
+                }
+                "reportCompletion" -> {
+                    val status = TaskGateSDK.CompletionStatus.valueOf(
+                        call.argument<String>("status")!!.uppercase()
+                    )
+                    TaskGateSDK.reportCompletion(status)
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        TaskGateSDK.handleIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        TaskGateSDK.handleIntent(intent)  // Triggers callback
+    }
+}
+```
+
+```dart
+// In Flutter
+class TaskGateService {
+  static const _channel = MethodChannel('taskgate');
+
+  static void init() {
+    // Listen for warm start tasks
+    _channel.setMethodCallHandler((call) async {
+      if (call.method == 'onTaskReceived') {
+        final taskId = call.arguments['taskId'];
+        final appName = call.arguments['appName'];
+        // Navigate to task screen
+      }
+    });
+  }
+
+  // Check on cold start
+  static Future<Map?> getPendingTask() async {
+    return await _channel.invokeMethod('getPendingTask');
+  }
+
+  static Future<void> reportCompletion(String status) async {
+    await _channel.invokeMethod('reportCompletion', {'status': status});
+  }
 }
 ```
 
@@ -90,12 +161,13 @@ fun onCancel() {
 
 ## API Reference
 
-| Method                            | Description                                |
-| --------------------------------- | ------------------------------------------ |
-| `initialize(context, providerId)` | Initialize SDK                             |
-| `handleIntent(intent)`            | Parse deep link                            |
-| `getPendingTask()`                | Returns `TaskInfo?` (null = normal launch) |
-| `reportCompletion(status)`        | Report result and clear state              |
+| Method                      | Description                                    |
+| --------------------------- | ---------------------------------------------- |
+| `initialize(context, id)`   | Initialize SDK (call in Application)           |
+| `handleIntent(intent)`      | Parse deep link, returns true if TaskGate link |
+| `setTaskCallback(callback)` | Set callback for warm start notifications      |
+| `getPendingTask()`          | Returns `TaskInfo?` (null = normal launch)     |
+| `reportCompletion(status)`  | Report result and redirect back to TaskGate    |
 
 ### TaskInfo
 
