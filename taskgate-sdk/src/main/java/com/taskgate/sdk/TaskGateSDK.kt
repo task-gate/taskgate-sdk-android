@@ -34,6 +34,7 @@ object TaskGateSDK {
     private var currentSessionId: String? = null
     private var callbackUrl: String? = null
     private var currentTaskId: String? = null
+    private var pendingTaskInfo: TaskInfo? = null
     
     /**
      * Task completion status
@@ -131,7 +132,7 @@ object TaskGateSDK {
         this.currentSessionId = sessionId
         this.callbackUrl = callbackUrl
         
-        Log.d(TAG, "Received task request: taskId=$taskId, sessionId=$sessionId")
+        Log.d(TAG, "[STEP 1] handleUri() - Received deep link: taskId=$taskId, sessionId=$sessionId")
         
         // Collect additional params
         val additionalParams = mutableMapOf<String, String>()
@@ -141,7 +142,7 @@ object TaskGateSDK {
             }
         }
         
-        // Notify listener
+        // Store task info - will be delivered when notifyReady() is called
         val taskInfo = TaskInfo(
             taskId = taskId,
             sessionId = sessionId,
@@ -150,15 +151,20 @@ object TaskGateSDK {
             additionalParams = additionalParams
         )
         
-        listener?.onTaskReceived(taskInfo)
-        listener?.onTaskRequested(taskId, additionalParams)
+        pendingTaskInfo = taskInfo
+        Log.d(TAG, "[STEP 2] handleUri() - Task STORED in pendingTaskInfo. NOT delivered yet.")
+        Log.d(TAG, "[STEP 2] Waiting for notifyReady() to be called...")
         
         return true
     }
     
     /**
      * Notify TaskGate that the app is ready (cold boot complete)
-     * Call this when your task UI is ready to be displayed
+     * Call this when your task UI is ready to be displayed.
+     * 
+     * This will:
+     * 1. Deliver the pending task info to your listener via onTaskReceived()
+     * 2. Signal TaskGate to dismiss the redirect screen
      */
     fun notifyReady() {
         val sessionId = currentSessionId ?: run {
@@ -166,8 +172,23 @@ object TaskGateSDK {
             return
         }
         
+        Log.d(TAG, "[STEP 3] notifyReady() called - App says it's ready")
+        
+        // Deliver pending task to listener
+        pendingTaskInfo?.let { taskInfo ->
+            Log.d(TAG, "[STEP 4] NOW delivering task to listener: taskId=${taskInfo.taskId}")
+            Log.d(TAG, "[STEP 4] Calling onTaskReceived() NOW (after notifyReady)")
+            listener?.onTaskReceived(taskInfo)
+            listener?.onTaskRequested(taskInfo.taskId, taskInfo.additionalParams)
+            pendingTaskInfo = null
+            Log.d(TAG, "[STEP 4] onTaskReceived() completed")
+        } ?: run {
+            Log.d(TAG, "[STEP 3] No pending task to deliver")
+        }
+        
         Log.d(TAG, "Notifying TaskGate: app ready (session=$sessionId)")
         
+        // Signal TaskGate to dismiss redirect screen
         val uri = Uri.Builder()
             .scheme(TASKGATE_SCHEME)
             .authority("partner-ready")
@@ -251,6 +272,7 @@ object TaskGateSDK {
         currentSessionId = null
         currentTaskId = null
         callbackUrl = null
+        pendingTaskInfo = null
     }
     
     private fun generateSessionId(): String {
