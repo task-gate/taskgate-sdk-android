@@ -321,7 +321,7 @@ if (task != null) { /* navigate to task */}</code></pre><pre><code>TaskGateSDK.r
                                     <li class="blockList">
                                         <h4>setTaskCallback</h4>
                                         <pre class="methodSignature"> final static <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a> <a href=TaskGateSDK.html#setTaskCallback(Function1)>setTaskCallback</a>(Function1&lt;<a href=TaskGateSDK.TaskInfo.html>TaskGateSDK.TaskInfo</a>, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a>&gt; callback)</pre>
-                                        <div class="block"><p>Set callback for warm start task notifications. Called when a task arrives while app is already running.</p><p>For Flutter apps, use this to notify Flutter via MethodChannel.</p></div>
+                                        <div class="block"><p>Set callback for warm start task notifications. Called when a task arrives while app is already running.</p><p>If a task is already pending (received before callback was set), the callback will be invoked immediately with that task.</p><p>For Flutter apps, use this to notify Flutter via MethodChannel.</p></div>
                                         
                                         <!-- TODO missing return annotation -->
                                     </li>

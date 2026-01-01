@@ -83,12 +83,21 @@ object TaskGateSDK {
      * Set callback for warm start task notifications.
      * Called when a task arrives while app is already running.
      * 
+     * If a task is already pending (received before callback was set),
+     * the callback will be invoked immediately with that task.
+     * 
      * For Flutter apps, use this to notify Flutter via MethodChannel.
      */
     @JvmStatic
     fun setTaskCallback(callback: ((TaskInfo) -> Unit)?) {
         this.taskCallback = callback
         Log.d(TAG, "Task callback ${if (callback != null) "set" else "cleared"}")
+        
+        // If there's a pending task and callback was just set, deliver it now
+        if (callback != null && pendingTask != null) {
+            Log.d(TAG, "Delivering pending task to newly registered callback: ${pendingTask!!.taskId}")
+            callback.invoke(pendingTask!!)
+        }
     }
     
     /**
