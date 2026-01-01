@@ -1,0 +1,6 @@
+[
+    {
+        "merged": "com.taskgate.sdk.taskgate-sdk-merged_res-7:/drawable-v21/notification_action_background.xml",
+        "source": "com.taskgate.sdk.taskgate-sdk-core-1.12.0-1:/drawable-v21/notification_action_background.xml"
+    }
+]

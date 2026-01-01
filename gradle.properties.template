@@ -1,0 +1,15 @@
+# Maven Central Publishing Credentials Template
+# Copy this file to gradle.properties and fill in your actual values
+# NEVER commit gradle.properties with real credentials to git!
+
+# Sonatype credentials (from https://central.sonatype.com/)
+ossrhUsername=your-sonatype-username
+ossrhPassword=your-sonatype-password
+
+# GPG signing key information
+# Key ID (last 8 characters of your key)
+signing.keyId=12345678
+# Key password
+signing.password=your-key-password
+# Path to your secret key file (or use signing.secretKeyRingFile for GPG < 2.1)
+signing.gnupg.keyName=your-email@taskgate.co
