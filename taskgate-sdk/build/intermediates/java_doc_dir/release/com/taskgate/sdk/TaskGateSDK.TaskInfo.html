@@ -160,6 +160,12 @@ public final class <span class="typeNameLabel"><a href=TaskGateSDK.TaskInfo.html
                                             <td class="colLast"></td>
                                         </tr>
                                         
+                                        <tr class="altColor">
+                                            <td class="colFirst"><code>private final <a href=https://developer.android.com/reference/kotlin/java/util/Map.html>Map</a>&lt;<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a>, <a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a>&gt;</code></td>
+                                            <th class="colSecond" scope="row"><code><a href=TaskGateSDK.TaskInfo.html#additionalParams>additionalParams</a></code></th>
+                                            <td class="colLast"></td>
+                                        </tr>
+                                        
                                     </table>
                                 </div>
                             </li>
@@ -186,7 +192,7 @@ public final class <span class="typeNameLabel"><a href=TaskGateSDK.TaskInfo.html
                                         
                                             <tr class="altColor">
                                                 <th class="colConstructorName" scope="row"><code><span class="memberNameLink"><a
-                                                        href="#TaskGateSDK.TaskInfo(String,String,String,String)">TaskGateSDK.TaskInfo</a></span>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> taskId, <a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> appName, <a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> sessionId, <a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> callbackUrl)</code></th>
+                                                        href="#TaskGateSDK.TaskInfo(String,String,String,String,Map)">TaskGateSDK.TaskInfo</a></span>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> taskId, <a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> appName, <a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> sessionId, <a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> callbackUrl, <a href=https://developer.android.com/reference/kotlin/java/util/Map.html>Map</a>&lt;<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a>, <a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a>&gt; additionalParams)</code></th>
                                                 <td class="colLast"></td>
                                             </tr>
                                         
@@ -253,6 +259,14 @@ public final class <span class="typeNameLabel"><a href=TaskGateSDK.TaskInfo.html
                                             <td class="colLast"></td>
                                         </tr>
                                         
+                                        <tr id="i4" class="altColor">
+                                            <td class="colFirst"><code>final <a href=https://developer.android.com/reference/kotlin/java/util/Map.html>Map</a>&lt;<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a>, <a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a>&gt;</code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=TaskGateSDK.TaskInfo.html#getAdditionalParams()>getAdditionalParams</a>() </code>
+                                            </th>
+                                            <td class="colLast"></td>
+                                        </tr>
+                                        
                                         </tbody>
                                     </table>
                                 </div>
@@ -284,11 +298,11 @@ public final class <span class="typeNameLabel"><a href=TaskGateSDK.TaskInfo.html
                             </a>
                                 <h3>Constructor Detail</h3>
                                 
-                                <a name="TaskGateSDK.TaskInfo(String,String,String,String)"></a>
+                                <a name="TaskGateSDK.TaskInfo(String,String,String,String,Map)"></a>
                                 <ul class="blockList">
                                     <li class="blockList">
                                         <h4>TaskGateSDK.TaskInfo</h4>
-                                        <pre>TaskGateSDK.TaskInfo(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> taskId, <a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> appName, <a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> sessionId, <a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> callbackUrl)</pre>
+                                        <pre>TaskGateSDK.TaskInfo(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> taskId, <a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> appName, <a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> sessionId, <a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> callbackUrl, <a href=https://developer.android.com/reference/kotlin/java/util/Map.html>Map</a>&lt;<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a>, <a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a>&gt; additionalParams)</pre>
                                         <div class="block"></div>
                                         
                                     </li>
@@ -356,11 +370,26 @@ public final class <span class="typeNameLabel"><a href=TaskGateSDK.TaskInfo.html
                                     <!--   -->
                                 </a>
                                 <ul class=
-                                              "blockListLast"
+                                              "blockList"
                                           >
                                     <li class="blockList">
                                         <h4>getCallbackUrl</h4>
                                         <pre class="methodSignature"> final <a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> <a href=TaskGateSDK.TaskInfo.html#getCallbackUrl()>getCallbackUrl</a>()</pre>
+                                        <div class="block"></div>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="getAdditionalParams()">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockListLast"
+                                          >
+                                    <li class="blockList">
+                                        <h4>getAdditionalParams</h4>
+                                        <pre class="methodSignature"> final <a href=https://developer.android.com/reference/kotlin/java/util/Map.html>Map</a>&lt;<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a>, <a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a>&gt; <a href=TaskGateSDK.TaskInfo.html#getAdditionalParams()>getAdditionalParams</a>()</pre>
                                         <div class="block"></div>
                                         
                                         <!-- TODO missing return annotation -->
