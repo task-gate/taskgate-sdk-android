@@ -18,6 +18,12 @@ TaskGate helps users break phone addiction by requiring them to complete a mindf
 
 This creates a **win-win**: users build better habits, and your app gains engaged users who are primed for mindful activities.
 
+<!-- Demo video placeholder:
+<p align="center">
+  <video src="https://github.com/user-attachments/assets/YOUR-VIDEO-ID.mp4" width="300" />
+</p>
+-->
+
 ---
 
 ## Quick Start (Native Android)
@@ -93,88 +99,6 @@ TaskGateSDK.reportCompletion(TaskGateSDK.CompletionStatus.CANCELLED)  // User ca
 
 ---
 
-## Flutter Integration
-
-For Flutter apps, use `setTaskCallback()` to receive warm start notifications:
-
-```kotlin
-// MainActivity.kt
-class MainActivity : FlutterActivity() {
-    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-        super.configureFlutterEngine(flutterEngine)
-
-        val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "taskgate")
-
-        // Callback for warm start (app already running)
-        TaskGateSDK.setTaskCallback { task ->
-            channel.invokeMethod("onTaskReceived", mapOf(
-                "taskId" to task.taskId,
-                "appName" to task.appName
-            ))
-        }
-
-        // Methods for Flutter to call
-        channel.setMethodCallHandler { call, result ->
-            when (call.method) {
-                "getPendingTask" -> {
-                    val task = TaskGateSDK.getPendingTask()
-                    result.success(task?.let {
-                        mapOf("taskId" to it.taskId, "appName" to it.appName)
-                    })
-                }
-                "reportCompletion" -> {
-                    val status = TaskGateSDK.CompletionStatus.valueOf(
-                        call.argument<String>("status")!!.uppercase()
-                    )
-                    TaskGateSDK.reportCompletion(status)
-                    result.success(null)
-                }
-                else -> result.notImplemented()
-            }
-        }
-    }
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        TaskGateSDK.handleIntent(intent)
-    }
-
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        TaskGateSDK.handleIntent(intent)  // Triggers callback
-    }
-}
-```
-
-```dart
-// In Flutter
-class TaskGateService {
-  static const _channel = MethodChannel('taskgate');
-
-  static void init() {
-    // Listen for warm start tasks
-    _channel.setMethodCallHandler((call) async {
-      if (call.method == 'onTaskReceived') {
-        final taskId = call.arguments['taskId'];
-        final appName = call.arguments['appName'];
-        // Navigate to task screen
-      }
-    });
-  }
-
-  // Check on cold start
-  static Future<Map?> getPendingTask() async {
-    return await _channel.invokeMethod('getPendingTask');
-  }
-
-  static Future<void> reportCompletion(String status) async {
-    await _channel.invokeMethod('reportCompletion', {'status': status});
-  }
-}
-```
-
----
-
 ## API Reference
 
 | Method                      | Description                                    |
@@ -192,7 +116,8 @@ data class TaskInfo(
     val taskId: String,
     val appName: String?,
     val sessionId: String,
-    val callbackUrl: String
+    val callbackUrl: String,
+    val additionalParams: Map<String, String> = emptyMap()
 )
 ```
 

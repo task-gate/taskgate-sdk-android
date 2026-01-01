@@ -63,7 +63,8 @@ object TaskGateSDK {
         val taskId: String,
         val appName: String?,
         val sessionId: String,
-        val callbackUrl: String
+        val callbackUrl: String,
+        val additionalParams: Map<String, String> = emptyMap()
     )
     
     enum class CompletionStatus(val value: String) {
@@ -110,23 +111,30 @@ object TaskGateSDK {
     fun handleIntent(intent: Intent?): Boolean {
         val uri = intent?.data ?: return false
         if (uri.path?.contains("taskgate") != true) return false
-        
+
         val taskId = uri.getQueryParameter("task_id") ?: return false
         val callbackUrl = uri.getQueryParameter("callback_url") ?: return false
-        
+
+        // Extract additional parameters (any query params not in the standard set)
+        val standardParams = setOf("task_id", "callback_url", "app_name", "session_id")
+        val additionalParams = uri.queryParameterNames
+            .filter { it !in standardParams }
+            .associate { it to (uri.getQueryParameter(it) ?: "") }
+
         val task = TaskInfo(
             taskId = taskId,
             appName = uri.getQueryParameter("app_name"),
             sessionId = uri.getQueryParameter("session_id") ?: java.util.UUID.randomUUID().toString().take(8),
-            callbackUrl = callbackUrl
+            callbackUrl = callbackUrl,
+            additionalParams = additionalParams
         )
-        
+
         pendingTask = task
-        Log.d(TAG, "Task received: $taskId")
-        
+        Log.d(TAG, "Task received: $taskId (${additionalParams.size} additional params)")
+
         // Notify callback (for warm start)
         taskCallback?.invoke(task)
-        
+
         return true
     }
     
