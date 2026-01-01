@@ -2,6 +2,7 @@ plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
     id("maven-publish")
+    signing
 }
 
 android {
@@ -38,16 +39,66 @@ dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
 }
 
-publishing {
-    publications {
-        register<MavenPublication>("release") {
-            groupId = "com.taskgate"
-            artifactId = "sdk"
-            version = "1.0.14"
+android {
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+            withJavadocJar()
+        }
+    }
+}
 
-            afterEvaluate {
+afterEvaluate {
+    publishing {
+        publications {
+            create<MavenPublication>("release") {
+                groupId = "co.taskgate"
+                artifactId = "sdk"
+                version = "1.0.15"
+
                 from(components["release"])
+
+                // POM metadata required by Maven Central
+                pom {
+                    name.set("TaskGate SDK")
+                    description.set("Official Android SDK for TaskGate")
+                    url.set("https://github.com/task-gate/taskgate-sdk-android")
+
+                    licenses {
+                        license {
+                            name.set("The Apache License, Version 2.0")
+                            url.set("http://www.apache.org/licenses/LICENSE-2.0.txt")
+                        }
+                    }
+
+                    developers {
+                        developer {
+                            id.set("taskgate")
+                            name.set("TaskGate Team")
+                            email.set("dev@taskgate.co")
+                        }
+                    }
+
+                    scm {
+                        connection.set("scm:git:git://github.com/task-gate/taskgate-sdk-android.git")
+                        developerConnection.set("scm:git:ssh://github.com/task-gate/taskgate-sdk-android.git")
+                        url.set("https://github.com/task-gate/taskgate-sdk-android")
+                    }
+                }
             }
         }
+
+        repositories {
+            maven {
+                name = "mavenCentral"
+                url = uri(layout.buildDirectory.dir("repo"))
+            }
+        }
+    }
+
+    // Signing configuration - use GPG command (gpg-agent will handle passphrase)
+    signing {
+        useGpgCmd()
+        sign(publishing.publications["release"])
     }
 }

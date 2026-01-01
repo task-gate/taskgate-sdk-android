@@ -1,0 +1,1 @@
+var typeSearchIndex = [{"p":"com.taskgate.sdk","l":"TaskGateSDK.TaskInfo","url":"com/taskgate/sdk/TaskGateSDK.TaskInfo.html"}, {"p":"com.taskgate.sdk","l":"TaskGateSDK.CompletionStatus","url":"com/taskgate/sdk/TaskGateSDK.CompletionStatus.html"}, {"p":"com.taskgate.sdk","l":"TaskGateSDK","url":"com/taskgate/sdk/TaskGateSDK.html"}, {"l":"All classes","url":"allclasses.html"}]

@@ -1,0 +1,18 @@
+[
+    {
+        "merged": "com.taskgate.sdk.taskgate-sdk-merged_res-7:/layout-v21/notification_template_icon_group.xml",
+        "source": "com.taskgate.sdk.taskgate-sdk-core-1.12.0-1:/layout-v21/notification_template_icon_group.xml"
+    },
+    {
+        "merged": "com.taskgate.sdk.taskgate-sdk-merged_res-7:/layout-v21/notification_template_custom_big.xml",
+        "source": "com.taskgate.sdk.taskgate-sdk-core-1.12.0-1:/layout-v21/notification_template_custom_big.xml"
+    },
+    {
+        "merged": "com.taskgate.sdk.taskgate-sdk-merged_res-7:/layout-v21/notification_action_tombstone.xml",
+        "source": "com.taskgate.sdk.taskgate-sdk-core-1.12.0-1:/layout-v21/notification_action_tombstone.xml"
+    },
+    {
+        "merged": "com.taskgate.sdk.taskgate-sdk-merged_res-7:/layout-v21/notification_action.xml",
+        "source": "com.taskgate.sdk.taskgate-sdk-core-1.12.0-1:/layout-v21/notification_action.xml"
+    }
+]
