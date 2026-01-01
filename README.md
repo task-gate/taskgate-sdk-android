@@ -2,6 +2,22 @@
 
 Enable your Android app to provide micro-tasks for TaskGate users.
 
+**[Download TaskGate on Google Play](https://play.google.com/store/apps/details?id=com.tkg.taskgate)** | **[Partnership Info](https://taskgate.co/partnership)**
+
+---
+
+## How It Works
+
+TaskGate helps users break phone addiction by requiring them to complete a mindful task before accessing distracting apps.
+
+1. **User blocks distracting apps** - Instagram, TikTok, games, etc.
+2. **User tries to open a blocked app** - TaskGate intercepts the launch
+3. **TaskGate redirects to your partner app** - Your app receives a deep link with task info
+4. **User completes your micro-task** - Breathing exercise, meditation, quiz, etc.
+5. **Your app reports completion** - TaskGate unlocks the blocked app (or user stays focused)
+
+This creates a **win-win**: users build better habits, and your app gains engaged users who are primed for mindful activities.
+
 ---
 
 ## Quick Start (Native Android)
@@ -192,6 +208,15 @@ data class TaskInfo(
 
 ## Installation
 
+### Gradle (Maven Central) - Recommended
+
+```kotlin
+// app/build.gradle.kts
+dependencies {
+    implementation("co.taskgate:sdk:1.0.15")
+}
+```
+
 ### Gradle (JitPack)
 
 ```kotlin
@@ -210,7 +235,16 @@ dependencies {
 
 ---
 
+## Becoming a Partner
+
+Visit **[taskgate.co](https://taskgate.co)** to learn more about partnership opportunities.
+
+**[Contact us](https://taskgate.co/contact-us)** to register and get your `providerId`.
+
+---
+
 ## Support
 
-- Email: partners@taskgate.app
-- Docs: https://docs.taskgate.app/partners/android
+- Website: [taskgate.co](https://taskgate.co)
+- Contact: [taskgate.co/contact-us](https://taskgate.co/contact-us)
+- Docs: [taskgate.co/partnership](https://taskgate.co/partnership)
