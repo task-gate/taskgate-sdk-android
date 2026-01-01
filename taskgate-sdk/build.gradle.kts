@@ -54,7 +54,7 @@ afterEvaluate {
             create<MavenPublication>("release") {
                 groupId = "co.taskgate"
                 artifactId = "sdk"
-                version = "1.0.15"
+                version = "1.0.16"
 
                 from(components["release"])
 
