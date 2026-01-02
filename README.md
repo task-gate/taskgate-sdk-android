@@ -4,6 +4,12 @@ Enable your Android app to provide micro-tasks for TaskGate users.
 
 **[Download TaskGate on Google Play](https://play.google.com/store/apps/details?id=com.tkg.taskgate)** | **[Partnership Info](https://taskgate.co/partnership)**
 
+
+![Demo](https://github.com/user-attachments/assets/cadb9e88-6062-4061-8ffa-d6f68fbffda3)
+
+▶️ **Watch full demo video:**  
+https://taskgate.co/mock/demo2.mp4
+
 ---
 
 ## How It Works
