@@ -57,13 +57,13 @@ object TaskGateSDK {
     private var context: Context? = null
     private var providerId: String? = null
     private var pendingTask: TaskInfo? = null
+    private var pendingCallbackUrl: String? = null  // Store callback URL separately
     private var taskCallback: ((TaskInfo) -> Unit)? = null
     
     data class TaskInfo(
         val taskId: String,
         val appName: String?,
         val sessionId: String,
-        internal val callbackUrl: String,
         val additionalParams: Map<String, String> = emptyMap()
     )
     
@@ -125,11 +125,11 @@ object TaskGateSDK {
             taskId = taskId,
             appName = uri.getQueryParameter("app_name"),
             sessionId = uri.getQueryParameter("session_id") ?: java.util.UUID.randomUUID().toString().take(8),
-            callbackUrl = callbackUrl,
             additionalParams = additionalParams
         )
 
         pendingTask = task
+        pendingCallbackUrl = callbackUrl  // Store separately
         Log.d(TAG, "Task received: $taskId (${additionalParams.size} additional params)")
 
         // Notify callback (for warm start)
@@ -144,8 +144,9 @@ object TaskGateSDK {
     @JvmStatic
     fun reportCompletion(status: CompletionStatus) {
         val task = pendingTask ?: return
+        val callbackUrl = pendingCallbackUrl ?: return
         
-        val uri = Uri.parse(task.callbackUrl).buildUpon()
+        val uri = Uri.parse(callbackUrl).buildUpon()
             .appendQueryParameter("status", status.value)
             .appendQueryParameter("provider_id", providerId)
             .appendQueryParameter("session_id", task.sessionId)
@@ -157,6 +158,7 @@ object TaskGateSDK {
         })
         
         pendingTask = null
+        pendingCallbackUrl = null
         Log.d(TAG, "Completed: ${status.value}")
     }
 }
