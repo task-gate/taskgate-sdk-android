@@ -63,7 +63,7 @@ object TaskGateSDK {
         val taskId: String,
         val appName: String?,
         val sessionId: String,
-        val callbackUrl: String,
+        internal val callbackUrl: String,
         val additionalParams: Map<String, String> = emptyMap()
     )
     
