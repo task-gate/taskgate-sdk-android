@@ -1,6 +1,0 @@
-$dokka.format:javadoc-v1
-$dokka.linkExtension:html
-$dokka.location:com.taskgate.sdk/TaskGateSDK.CompletionStatus///PointingToDeclaration/com/taskgate/sdk/TaskGateSDK.CompletionStatus.html
-$dokka.location:com.taskgate.sdk/TaskGateSDK.TaskInfo///PointingToDeclaration/com/taskgate/sdk/TaskGateSDK.TaskInfo.html
-com.taskgate.sdk
-
